@@ -218,10 +218,14 @@ object PersianTransliterator {
     )
 
     /**
-     * Normalizes all Persian/Arabic characters, specifically:
+     * Normalizes Persian/Arabic characters:
      * - 'ک' (Persian Kaf \u06A9) and 'ك' (Arabic Kaf \u0643) -> Unified Persian 'ک'
      * - 'ی' (Persian Yeh \u06CC) and 'ي' (Arabic Yeh \u064A) -> Unified Persian 'ی'
-     * - Strip tatweel/kashida, diacritics, and normalize ZWNJ
+     * - Explicitly preserves short vowel diacritics:
+     *   - Fatha (َ / \u064E) -> maps to 'a' phoneme
+     *   - Kasra (ِ / \u0650) -> maps to 'e' phoneme
+     *   - Damma (ُ / \u064F) -> maps to 'o' phoneme
+     * - Strips tatweel/kashida, tanwin, shaddah, sukun, and normalizes ZWNJ to space
      */
     fun normalizeText(input: String): String {
         val sb = StringBuilder(input.length)
@@ -230,7 +234,8 @@ object PersianTransliterator {
                 '\u0643', '\u06A9' -> sb.append('ک') // Arabic Kaf & Persian Kaf
                 '\u064A', '\u06CC', '\u0649' -> sb.append('ی') // Arabic Yeh & Persian Yeh
                 '\u0640' -> {} // Kashida/Tatweel (ignore)
-                '\u064B', '\u064C', '\u064D', '\u064E', '\u064F', '\u0650', '\u0651', '\u0652' -> {} // Arabic Tashkeel/harakat
+                '\u064E', '\u0650', '\u064F' -> sb.append(c) // PRESERVE FATHA (َ), KASRA (ِ), DAMMA (ُ)
+                '\u064B', '\u064C', '\u064D', '\u0651', '\u0652' -> {} // Other non-vowel tashkeel (tanwin, shadda, sukun)
                 '\u200C' -> sb.append(' ') // ZWNJ to space
                 else -> sb.append(c)
             }
@@ -319,14 +324,22 @@ object PersianTransliterator {
     private fun transliterateToken(token: String): String {
         val trimmed = token.trim()
 
-        // 1. Direct dictionary match for common given names & family names
+        // 1. Check exact dictionary match
         commonGivenNames[trimmed]?.let { return it }
+
+        // Also check stripped version if word has diacritics (e.g. كَرِیم -> کریم -> Karim)
+        val stripped = stripDiacritics(trimmed)
+        if (stripped != trimmed) {
+            commonGivenNames[stripped]?.let { return it }
+        }
 
         // 2. Prefix match
         prefixes[trimmed]?.let { return it }
+        prefixes[stripped]?.let { return it }
 
         // 3. Standalone particles
         standaloneParticles[trimmed]?.let { return it }
+        standaloneParticles[stripped]?.let { return it }
 
         // 4. Suffix check (e.g. رضازاده -> Rezazadeh, کریمی‌پور -> Karimipour)
         for ((sufFa, sufEn) in suffixes) {
@@ -337,13 +350,22 @@ object PersianTransliterator {
             }
         }
 
-        // 5. High-fidelity phoneme transliteration
+        // 5. High-fidelity phoneme transliteration with Persian short vowel awareness
         return phoneticallyTransliterate(trimmed)
     }
 
+    private fun stripDiacritics(input: String): String {
+        return input.filter { it != '\u064E' && it != '\u0650' && it != '\u064F' }
+    }
+
     /**
-     * Persian phoneme transliteration ensuring 'ک' is always transliterated as 'k' (never dropped),
-     * and digraphs like 'خ' (kh), 'ش' (sh), 'چ' (ch), 'ژ' (zh), 'غ'/'ق' (gh) are recognized.
+     * Persian phoneme transliteration:
+     * - 'ک' (kāf) is ALWAYS transliterated as 'k' (never ignored).
+     * - Recognizes short vowels:
+     *   - Fatha (َ / \u064E) -> "a"
+     *   - Kasra (ِ / \u0650) -> "e"
+     *   - Damma (ُ / \u064F) -> "o"
+     * - Recognizes Persian digraphs: 'خ' (kh), 'ش' (sh), 'چ' (ch), 'ژ' (zh), 'غ'/'ق' (gh).
      */
     private fun phoneticallyTransliterate(word: String): String {
         val sb = StringBuilder()
@@ -366,12 +388,21 @@ object PersianTransliterator {
             }
 
             when (c) {
+                // Persian Short Vowels (Harakat / Erab):
+                // 1. Fatha (َ / \u064E) -> Persian short 'a'
+                '\u064E' -> sb.append("a")
+                // 2. Kasra (ِ / \u0650) -> Persian short 'e'
+                '\u0650' -> sb.append("e")
+                // 3. Damma (ُ / \u064F) -> Persian short 'o'
+                '\u064F' -> sb.append("o")
+
                 // Kaf: MUST NEVER be ignored! Supports both Persian 'ک' and Arabic 'ك'
                 'ک', '\u0643' -> sb.append("k")
                 'گ' -> sb.append("g")
 
                 'آ' -> sb.append(if (isStart) "A" else "a")
                 'ا' -> {
+                    // Check if followed by short vowel diacritic
                     if (isStart) sb.append("A")
                     else sb.append("a")
                 }
