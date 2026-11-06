@@ -1,0 +1,6 @@
+{
+  "name": "ParsVCF Extractor",
+  "description": "Extract and filter 469-prefix contacts from CSV databases, transliterate Persian names to Latin script, and generate VCF files with real-time dashboard progress.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
