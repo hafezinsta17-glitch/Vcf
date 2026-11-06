@@ -2,7 +2,7 @@ name: Build Debug APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 permissions:
@@ -118,17 +118,7 @@ jobs:
 
           TAG_NAME="debug-apk-build-${{ github.run_number }}-${{ github.run_attempt }}"
           RELEASE_TITLE="Debug APK Build #${{ github.run_number }}"
-          
-          RELEASE_NOTES=$(cat <<EOF
-          ### Automatically Generated Debug APK
-          - Built automatically by GitHub Actions.
-          - **Run Number:** #${{ github.run_number }}
-          - **Run Attempt:** #${{ github.run_attempt }}
-          - **Commit SHA:** \`${{ github.sha }}\`
-          
-          > **Notice:** This APK is intended for testing and debugging purposes only. It is not a production release and is signed using a temporary debug keystore.
-          EOF
-          )
+          RELEASE_NOTES="Automatically generated debug APK built by GitHub Actions. Run #${{ github.run_number }} (attempt #${{ github.run_attempt }}), commit ${{ github.sha }}. Intended for testing and debugging purposes; signed with a temporary debug keystore."
 
           gh release create "$TAG_NAME" "$ASSET_PATH" \
             --target "${{ github.sha }}" \

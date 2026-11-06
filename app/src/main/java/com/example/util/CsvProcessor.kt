@@ -133,17 +133,44 @@ object CsvProcessor {
     }
 
     /**
-     * Reads all raw lines from an InputStream, skipping empty lines.
+     * Reads lines from an InputStream with UTF-8 / Windows-1256 charset auto-detection
+     * and UTF-8 BOM stripping.
      */
     fun readLines(inputStream: InputStream): List<String> {
         val lines = mutableListOf<String>()
-        BufferedReader(InputStreamReader(inputStream, StandardCharsets.UTF_8)).use { reader ->
-            var line = reader.readLine()
-            while (line != null) {
-                if (line.isNotBlank()) {
-                    lines.add(line)
+        // Read raw bytes to detect encoding (UTF-8, UTF-8 BOM, or Persian Windows-1256/ISO-8859-1)
+        val bytes = inputStream.readBytes()
+        if (bytes.isEmpty()) return emptyList()
+
+        val charset = when {
+            bytes.size >= 3 && bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte() -> {
+                StandardCharsets.UTF_8
+            }
+            else -> {
+                // Try UTF-8 first, fallback gracefully
+                try {
+                    val decoder = StandardCharsets.UTF_8.newDecoder()
+                    decoder.decode(java.nio.ByteBuffer.wrap(bytes))
+                    StandardCharsets.UTF_8
+                } catch (e: Exception) {
+                    try {
+                        java.nio.charset.Charset.forName("windows-1256")
+                    } catch (e2: Exception) {
+                        StandardCharsets.ISO_8859_1
+                    }
                 }
-                line = reader.readLine()
+            }
+        }
+
+        var text = String(bytes, charset)
+        if (text.startsWith("\uFEFF")) {
+            text = text.substring(1)
+        }
+
+        text.lineSequence().forEach { line ->
+            val trimmed = line.trim()
+            if (trimmed.isNotBlank()) {
+                lines.add(trimmed)
             }
         }
         return lines

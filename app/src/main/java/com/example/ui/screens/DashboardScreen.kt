@@ -129,11 +129,19 @@ fun DashboardScreen(
     var showVcfPreviewDialog by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
-    // File Picker Launcher for CSV
+    // File Picker Launcher for CSV (GetContent is universally supported on all Android versions)
     val csvPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
+        contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { viewModel.loadFromUri(context, it) }
+    }
+
+    val openCsvPicker = {
+        try {
+            csvPickerLauncher.launch("*/*")
+        } catch (t: Throwable) {
+            Toast.makeText(context, "No file manager found: ${t.localizedMessage}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     // Save VCF Document Launcher (SAF)
@@ -331,14 +339,16 @@ fun DashboardScreen(
             // 3. Action Toolbar (Select CSV, Export VCF, Share, Preview)
             item {
                 ActionToolbar(
-                    onSelectCsv = {
-                        csvPickerLauncher.launch(arrayOf("text/*", "*/*"))
-                    },
+                    onSelectCsv = openCsvPicker,
                     onExportVcf = {
                         if (audiences.isEmpty()) {
                             Toast.makeText(context, "No matched audiences to export.", Toast.LENGTH_SHORT).show()
                         } else {
-                            saveVcfLauncher.launch("audiences_${targetPrefix}_${System.currentTimeMillis()}.vcf")
+                            try {
+                                saveVcfLauncher.launch("audiences_${targetPrefix}_${System.currentTimeMillis()}.vcf")
+                            } catch (t: Throwable) {
+                                Toast.makeText(context, "Failed to launch save dialog: ${t.localizedMessage}", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     },
                     onShareVcf = { shareVcfFile() },
@@ -365,9 +375,7 @@ fun DashboardScreen(
                         hasQuery = searchQuery.isNotBlank(),
                         totalAudienceCount = audiences.size,
                         targetPrefix = targetPrefix,
-                        onSelectCsv = {
-                            csvPickerLauncher.launch(arrayOf("text/*", "*/*"))
-                        }
+                        onSelectCsv = openCsvPicker
                     )
                 }
             } else {
