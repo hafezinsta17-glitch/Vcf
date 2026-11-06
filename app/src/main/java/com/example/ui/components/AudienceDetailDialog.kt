@@ -189,7 +189,7 @@ fun AudienceDetailDialog(
                     icon = Icons.Default.Badge,
                     label = "National Code",
                     value = audience.nationalCode,
-                    highlight = "469"
+                    highlight = audience.matchedPrefix
                 )
 
                 AttributeRow(

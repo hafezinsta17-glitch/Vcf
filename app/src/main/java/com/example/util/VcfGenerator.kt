@@ -41,7 +41,7 @@ object VcfGenerator {
         if (record.fullNamePersian.isNotBlank()) {
             sb.appendLine("X-PERSIAN-NAME:${escapeVcf(record.fullNamePersian)}")
         }
-        sb.appendLine("CATEGORIES:ParsVCF,Audience-469")
+        sb.appendLine("CATEGORIES:ParsVCF,Audience-${record.matchedPrefix}")
         sb.appendLine("END:VCARD")
         return sb.toString()
     }

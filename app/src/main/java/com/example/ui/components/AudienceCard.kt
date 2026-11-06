@@ -214,16 +214,17 @@ fun AudienceCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    // Highlight "469"
-                    if (record.nationalCode.startsWith("469")) {
+                    // Highlight matched prefix
+                    val prefix = record.matchedPrefix
+                    if (record.nationalCode.startsWith(prefix)) {
                         Text(
-                            text = "469",
+                            text = prefix,
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.ExtraBold,
                             color = Amber400
                         )
                         Text(
-                            text = record.nationalCode.substring(3),
+                            text = record.nationalCode.substring(prefix.length),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White

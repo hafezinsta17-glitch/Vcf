@@ -80,10 +80,13 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.clickable
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material.icons.filled.Badge
 import com.example.ui.components.AudienceCard
 import com.example.ui.components.AudienceDetailDialog
+import com.example.ui.components.PrefixInputDialog
 import com.example.ui.components.VcfPreviewDialog
 import com.example.ui.theme.Amber400
 import com.example.ui.theme.Amber500
@@ -120,6 +123,8 @@ fun DashboardScreen(
     val fileName by viewModel.currentFileName.collectAsStateWithLifecycle()
     val speedMode by viewModel.speedMode.collectAsStateWithLifecycle()
     val toastMessage by viewModel.toastMessage.collectAsStateWithLifecycle()
+    val targetPrefix by viewModel.targetPrefix.collectAsStateWithLifecycle()
+    val isPrefixDialogOpen by viewModel.isPrefixDialogOpen.collectAsStateWithLifecycle()
 
     var showVcfPreviewDialog by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
@@ -168,7 +173,7 @@ fun DashboardScreen(
 
     fun shareVcfFile() {
         if (audiences.isEmpty()) {
-            Toast.makeText(context, "No 469 audiences to export yet", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "No $targetPrefix audiences to export yet", Toast.LENGTH_SHORT).show()
             return
         }
         val file = viewModel.prepareVcfFile(context)
@@ -180,7 +185,7 @@ fun DashboardScreen(
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/x-vcard"
             putExtra(Intent.EXTRA_STREAM, fileUri)
-            putExtra(Intent.EXTRA_SUBJECT, "469 National Code Audiences (${audiences.size} contacts)")
+            putExtra(Intent.EXTRA_SUBJECT, "$targetPrefix National Code Audiences (${audiences.size} contacts)")
             putExtra(Intent.EXTRA_TEXT, "Exported ${audiences.size} contacts with Latin-transliterated names.")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
@@ -226,6 +231,30 @@ fun DashboardScreen(
                     }
                 },
                 actions = {
+                    // Prefix Change Button
+                    OutlinedButton(
+                        onClick = { viewModel.openPrefixDialog() },
+                        modifier = Modifier
+                            .padding(end = 4.dp)
+                            .testTag("top_bar_prefix_button"),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Amber400
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Amber400.copy(alpha = 0.6f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Badge,
+                            contentDescription = "National Code Prefix",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = targetPrefix,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+
                     // Speed Mode Button
                     OutlinedButton(
                         onClick = { viewModel.toggleSpeedMode() },
@@ -282,6 +311,8 @@ fun DashboardScreen(
                 RealTimeProgressCard(
                     stats = stats,
                     fileName = fileName,
+                    targetPrefix = targetPrefix,
+                    onOpenPrefix = { viewModel.openPrefixDialog() },
                     onPauseResume = {
                         if (stats.isProcessing) {
                             viewModel.stopProcessing()
@@ -297,20 +328,17 @@ fun DashboardScreen(
                 MetricsGrid(stats = stats)
             }
 
-            // 3. Action Toolbar (Load CSV, Sample, Export VCF, Share)
+            // 3. Action Toolbar (Select CSV, Export VCF, Share, Preview)
             item {
                 ActionToolbar(
                     onSelectCsv = {
                         csvPickerLauncher.launch(arrayOf("text/*", "*/*"))
                     },
-                    onLoadSample = {
-                        viewModel.loadSampleData(autoStart = true)
-                    },
                     onExportVcf = {
                         if (audiences.isEmpty()) {
                             Toast.makeText(context, "No matched audiences to export.", Toast.LENGTH_SHORT).show()
                         } else {
-                            saveVcfLauncher.launch("audiences_469_${System.currentTimeMillis()}.vcf")
+                            saveVcfLauncher.launch("audiences_${targetPrefix}_${System.currentTimeMillis()}.vcf")
                         }
                     },
                     onShareVcf = { shareVcfFile() },
@@ -335,7 +363,11 @@ fun DashboardScreen(
                     EmptyAudienceState(
                         isProcessing = stats.isProcessing,
                         hasQuery = searchQuery.isNotBlank(),
-                        totalAudienceCount = audiences.size
+                        totalAudienceCount = audiences.size,
+                        targetPrefix = targetPrefix,
+                        onSelectCsv = {
+                            csvPickerLauncher.launch(arrayOf("text/*", "*/*"))
+                        }
                     )
                 }
             } else {
@@ -380,7 +412,19 @@ fun DashboardScreen(
             },
             onSaveToDevice = {
                 showVcfPreviewDialog = false
-                saveVcfLauncher.launch("contacts_469_${System.currentTimeMillis()}.vcf")
+                saveVcfLauncher.launch("contacts_${targetPrefix}_${System.currentTimeMillis()}.vcf")
+            }
+        )
+    }
+
+    // National Code Prefix Input Dialog (prompted before processing or on demand)
+    if (isPrefixDialogOpen) {
+        PrefixInputDialog(
+            initialPrefix = targetPrefix,
+            fileName = if (fileName != "No CSV file loaded") fileName else null,
+            onDismiss = { viewModel.closePrefixDialog() },
+            onConfirm = { chosenPrefix ->
+                viewModel.confirmPrefixAndStart(chosenPrefix)
             }
         )
     }
@@ -390,6 +434,8 @@ fun DashboardScreen(
 private fun RealTimeProgressCard(
     stats: com.example.model.DashboardStats,
     fileName: String,
+    targetPrefix: String,
+    onOpenPrefix: () -> Unit,
     onPauseResume: () -> Unit
 ) {
     val animatedProgress by animateFloatAsState(
@@ -433,6 +479,30 @@ private fun RealTimeProgressCard(
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White
                     )
+
+                    // Target Prefix Badge
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .background(Amber400.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                            .clickable { onOpenPrefix() }
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                            .testTag("progress_card_prefix_chip")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Badge,
+                            contentDescription = null,
+                            tint = Amber400,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Text(
+                            text = targetPrefix,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Amber400
+                        )
+                    }
                 }
 
                 // Processing status chip
@@ -559,6 +629,7 @@ private fun RealTimeProgressCard(
 
 @Composable
 private fun MetricsGrid(stats: com.example.model.DashboardStats) {
+    val prefix = stats.targetPrefix
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -577,8 +648,8 @@ private fun MetricsGrid(stats: com.example.model.DashboardStats) {
             )
 
             MetricCard(
-                title = "469 + Mobile Matched",
-                value = stats.matched469AndMobile.toString(),
+                title = "$prefix + Mobile",
+                value = stats.matchedPrefixAndMobile.toString(),
                 icon = Icons.Default.CheckCircle,
                 tint = Emerald400,
                 modifier = Modifier.weight(1f),
@@ -591,12 +662,12 @@ private fun MetricsGrid(stats: com.example.model.DashboardStats) {
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             MetricCard(
-                title = "Skipped (Non-469)",
-                value = stats.skippedNon469.toString(),
+                title = "Skipped (Non-$prefix)",
+                value = stats.skippedNonPrefix.toString(),
                 icon = Icons.Default.FilterAlt,
                 tint = Amber400,
                 modifier = Modifier.weight(1f),
-                tag = "metric_skipped_non469"
+                tag = "metric_skipped_non_prefix"
             )
 
             MetricCard(
@@ -664,11 +735,9 @@ private fun MetricCard(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ActionToolbar(
     onSelectCsv: () -> Unit,
-    onLoadSample: () -> Unit,
     onExportVcf: () -> Unit,
     onShareVcf: () -> Unit,
     onViewVcf: () -> Unit,
@@ -678,44 +747,22 @@ private fun ActionToolbar(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Row 1: Load CSV & Load Demo
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        // Row 1: Select CSV File
+        Button(
+            onClick = onSelectCsv,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("select_csv_button"),
+            colors = ButtonDefaults.buttonColors(containerColor = Cyan500)
         ) {
-            Button(
-                onClick = onSelectCsv,
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("select_csv_button"),
-                colors = ButtonDefaults.buttonColors(containerColor = Cyan500)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.FolderOpen,
-                    contentDescription = "Pick CSV",
-                    tint = Color.Black,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Select CSV", color = Color.Black, fontWeight = FontWeight.Bold)
-            }
-
-            OutlinedButton(
-                onClick = onLoadSample,
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("load_sample_csv_button"),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Slate700)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = "Demo data",
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Sample 469 CSV", color = Color.White)
-            }
+            Icon(
+                imageVector = Icons.Default.FolderOpen,
+                contentDescription = "Pick CSV",
+                tint = Color.Black,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Select CSV File", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 15.sp)
         }
 
         // Row 2: VCF actions (Export, Share, View)
@@ -852,12 +899,14 @@ private fun AudienceHeaderAndSearch(
 private fun EmptyAudienceState(
     isProcessing: Boolean,
     hasQuery: Boolean,
-    totalAudienceCount: Int
+    totalAudienceCount: Int,
+    targetPrefix: String,
+    onSelectCsv: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 20.dp),
+            .padding(vertical = 14.dp),
         colors = CardDefaults.cardColors(containerColor = Slate900),
         shape = RoundedCornerShape(14.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, Slate800)
@@ -882,7 +931,7 @@ private fun EmptyAudienceState(
                     color = Color.White
                 )
                 Text(
-                    text = "Checking NATIONAL_CODE starting with '469' and valid MOBILE numbers",
+                    text = "Checking NATIONAL_CODE starting with '$targetPrefix' and valid MOBILE numbers",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -903,22 +952,38 @@ private fun EmptyAudienceState(
                 Icon(
                     imageVector = Icons.Default.FilterAlt,
                     contentDescription = "No records",
-                    tint = Slate700,
-                    modifier = Modifier.size(36.dp)
+                    tint = Cyan400,
+                    modifier = Modifier.size(40.dp)
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 Text(
-                    text = "No 469-prefix audiences found",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
+                    text = "No CSV Database Loaded",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Please load a CSV containing columns: NATIONAL_CODE, CARD_NO, FULL_NAME, BIRTH_DATE, MOBILE",
+                    text = "Provide a CSV database containing:\nNATIONAL_CODE, CARD_NO, FULL_NAME, BIRTH_DATE, and MOBILE.\nRecords starting with '$targetPrefix' with a mobile number will be extracted.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = onSelectCsv,
+                    colors = ButtonDefaults.buttonColors(containerColor = Cyan500),
+                    modifier = Modifier.testTag("empty_state_select_csv_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FolderOpen,
+                        contentDescription = "Select CSV",
+                        tint = Color.Black,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Select CSV File", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }

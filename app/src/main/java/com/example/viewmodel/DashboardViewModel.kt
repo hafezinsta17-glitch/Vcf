@@ -20,7 +20,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.InputStream
 
 enum class ProcessingSpeed(val label: String, val delayMs: Long) {
     ANIMATED_STREAM("Real-Time Visual", 50L),
@@ -29,7 +28,18 @@ enum class ProcessingSpeed(val label: String, val delayMs: Long) {
 
 class DashboardViewModel : ViewModel() {
 
-    private val _stats = MutableStateFlow(DashboardStats())
+    private val _targetPrefix = MutableStateFlow("469")
+    val targetPrefix: StateFlow<String> = _targetPrefix.asStateFlow()
+
+    private val _isPrefixDialogOpen = MutableStateFlow(false)
+    val isPrefixDialogOpen: StateFlow<Boolean> = _isPrefixDialogOpen.asStateFlow()
+
+    private val _stats = MutableStateFlow(
+        DashboardStats(
+            targetPrefix = "469",
+            statusMessage = "Select a CSV database file to begin extraction"
+        )
+    )
     val stats: StateFlow<DashboardStats> = _stats.asStateFlow()
 
     private val _audiences = MutableStateFlow<List<AudienceRecord>>(emptyList())
@@ -44,7 +54,7 @@ class DashboardViewModel : ViewModel() {
     private val _selectedAudience = MutableStateFlow<AudienceRecord?>(null)
     val selectedAudience: StateFlow<AudienceRecord?> = _selectedAudience.asStateFlow()
 
-    private val _currentFileName = MutableStateFlow("sample_iranian_database.csv")
+    private val _currentFileName = MutableStateFlow("No CSV file loaded")
     val currentFileName: StateFlow<String> = _currentFileName.asStateFlow()
 
     private val _speedMode = MutableStateFlow(ProcessingSpeed.ANIMATED_STREAM)
@@ -57,6 +67,7 @@ class DashboardViewModel : ViewModel() {
     val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
 
     private var processingJob: Job? = null
+    private var lastLoadedLines: List<String> = emptyList()
 
     // Search and filter on audiences
     val filteredAudiences: StateFlow<List<AudienceRecord>> = combine(_audiences, _searchQuery) { list, query ->
@@ -73,17 +84,20 @@ class DashboardViewModel : ViewModel() {
         }
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
-    init {
-        // Automatically start with sample dataset demonstration so user immediately sees functionality!
-        loadSampleData(autoStart = true)
-    }
-
     fun toggleSpeedMode() {
         _speedMode.value = if (_speedMode.value == ProcessingSpeed.ANIMATED_STREAM) {
             ProcessingSpeed.TURBO_FAST
         } else {
             ProcessingSpeed.ANIMATED_STREAM
         }
+    }
+
+    fun openPrefixDialog() {
+        _isPrefixDialogOpen.value = true
+    }
+
+    fun closePrefixDialog() {
+        _isPrefixDialogOpen.value = false
     }
 
     fun updateSearchQuery(query: String) {
@@ -98,12 +112,6 @@ class DashboardViewModel : ViewModel() {
         _toastMessage.value = null
     }
 
-    fun loadSampleData(autoStart: Boolean = true) {
-        val sample = CsvProcessor.getSampleCsv()
-        _currentFileName.value = "iran_sample_469_dataset.csv"
-        processCsvLines(sample.lines().filter { it.isNotBlank() }, autoStart)
-    }
-
     fun loadFromUri(context: Context, uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -112,8 +120,13 @@ class DashboardViewModel : ViewModel() {
 
                 context.contentResolver.openInputStream(uri)?.use { stream ->
                     val lines = CsvProcessor.readLines(stream)
+                    lastLoadedLines = lines
                     withContext(Dispatchers.Main) {
-                        processCsvLines(lines, start = true)
+                        // Prompt user for 3-digit prefix before starting processing!
+                        _isPrefixDialogOpen.value = true
+                        _stats.value = _stats.value.copy(
+                            statusMessage = "Loaded $filename (${lines.size} rows). Confirm 3-digit prefix to start."
+                        )
                     }
                 } ?: run {
                     _toastMessage.value = "Could not open selected CSV file."
@@ -124,16 +137,35 @@ class DashboardViewModel : ViewModel() {
         }
     }
 
-    fun restartCurrentProcessing() {
-        // Re-run with currently loaded lines
-        loadSampleData(autoStart = true)
+    fun confirmPrefixAndStart(prefix: String) {
+        _targetPrefix.value = prefix
+        _isPrefixDialogOpen.value = false
+
+        if (lastLoadedLines.isEmpty()) {
+            _toastMessage.value = "Please select a CSV file first."
+            return
+        }
+
+        processCsvLines(lastLoadedLines, prefix, start = true)
     }
 
-    private fun processCsvLines(allLines: List<String>, start: Boolean) {
+    fun restartCurrentProcessing() {
+        if (lastLoadedLines.isEmpty()) {
+            _toastMessage.value = "Please select a CSV file first."
+            return
+        }
+        // Ask for 3-digit prefix or re-run
+        _isPrefixDialogOpen.value = true
+    }
+
+    private fun processCsvLines(allLines: List<String>, prefix: String, start: Boolean) {
         processingJob?.cancel()
 
         if (allLines.isEmpty()) {
-            _stats.value = DashboardStats(statusMessage = "CSV file is empty")
+            _stats.value = DashboardStats(
+                targetPrefix = prefix,
+                statusMessage = "CSV file is empty"
+            )
             return
         }
 
@@ -153,39 +185,40 @@ class DashboardViewModel : ViewModel() {
         _vcfExportFile.value = null
 
         _stats.value = DashboardStats(
+            targetPrefix = prefix,
             totalRowsProcessed = 0,
             totalTargetRows = total,
-            matched469AndMobile = 0,
-            skippedNon469 = 0,
+            matchedPrefixAndMobile = 0,
+            skippedNonPrefix = 0,
             skippedMissingMobile = 0,
             totalVcfSaved = 0,
             isProcessing = start,
             progressFraction = 0f,
-            statusMessage = if (start) "Extracting 469 records & transliterating Persian names..." else "Ready to process ($total rows)"
+            statusMessage = if (start) "Extracting '$prefix' records & transliterating Persian names..." else "Ready to process ($total rows)"
         )
 
         if (start) {
-            startExtraction(dataLines, mapping)
+            startExtraction(dataLines, mapping, prefix)
         }
     }
 
-    private fun startExtraction(lines: List<String>, mapping: CsvProcessor.ColumnMapping) {
+    private fun startExtraction(lines: List<String>, mapping: CsvProcessor.ColumnMapping, prefix: String) {
         processingJob?.cancel()
         processingJob = viewModelScope.launch(Dispatchers.Default) {
             val total = lines.size
             val matchedList = mutableListOf<AudienceRecord>()
-            var skippedNon469Count = 0
+            var skippedNonPrefixCount = 0
             var skippedNoMobileCount = 0
 
             val delayDuration = _speedMode.value.delayMs
 
             lines.forEachIndexed { index, line ->
                 val tokens = CsvProcessor.splitCsvLine(line)
-                val parseResult = CsvProcessor.parseRow(tokens, mapping, index + 1)
+                val parseResult = CsvProcessor.parseRow(tokens, mapping, index + 1, prefix)
                 val record = parseResult.record
 
-                if (!parseResult.is469) {
-                    skippedNon469Count++
+                if (!parseResult.isPrefixMatched) {
+                    skippedNonPrefixCount++
                 } else if (!parseResult.hasMobile) {
                     skippedNoMobileCount++
                 } else {
@@ -204,18 +237,19 @@ class DashboardViewModel : ViewModel() {
 
                 withContext(Dispatchers.Main) {
                     _stats.value = DashboardStats(
+                        targetPrefix = prefix,
                         totalRowsProcessed = currentProcessed,
                         totalTargetRows = total,
-                        matched469AndMobile = matchedList.size,
-                        skippedNon469 = skippedNon469Count,
+                        matchedPrefixAndMobile = matchedList.size,
+                        skippedNonPrefix = skippedNonPrefixCount,
                         skippedMissingMobile = skippedNoMobileCount,
                         totalVcfSaved = matchedList.size,
                         isProcessing = currentProcessed < total,
                         progressFraction = progress,
                         statusMessage = if (currentProcessed < total) {
-                            "Extracting row $currentProcessed of $total (${(progress * 100).toInt()}%)..."
+                            "Extracting '$prefix' row $currentProcessed of $total (${(progress * 100).toInt()}%)..."
                         } else {
-                            "Completed: ${matchedList.size} audiences extracted & transliterated to VCF."
+                            "Completed: ${matchedList.size} audiences ('$prefix') extracted & transliterated to VCF."
                         }
                     )
                 }
@@ -229,9 +263,9 @@ class DashboardViewModel : ViewModel() {
                 _stats.value = _stats.value.copy(
                     isProcessing = false,
                     progressFraction = 1f,
-                    statusMessage = "Extraction finished! ${matchedList.size} audiences ready in VCF."
+                    statusMessage = "Extraction finished! ${matchedList.size} audiences ('$prefix') ready in VCF."
                 )
-                _toastMessage.value = "Successfully generated VCF for ${matchedList.size} audiences!"
+                _toastMessage.value = "Successfully generated VCF for ${matchedList.size} audiences (Prefix: $prefix)!"
             }
         }
     }
@@ -264,7 +298,7 @@ class DashboardViewModel : ViewModel() {
         val records = _audiences.value
         val vcfDir = File(context.cacheDir, "vcf")
         vcfDir.mkdirs()
-        val file = File(vcfDir, "contacts_469_${System.currentTimeMillis()}.vcf")
+        val file = File(vcfDir, "contacts_${_targetPrefix.value}_${System.currentTimeMillis()}.vcf")
         VcfGenerator.writeToFile(file, records)
         _vcfExportFile.value = file
         return file
