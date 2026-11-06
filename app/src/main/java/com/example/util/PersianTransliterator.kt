@@ -9,7 +9,7 @@ import java.util.Locale
  */
 object PersianTransliterator {
 
-    // Common Iranian First Names dictionary for natural romanization
+    // Common Iranian First Names and Family Names dictionary for natural romanization
     private val commonGivenNames = mapOf(
         "محمد" to "Mohammad",
         "علی" to "Ali",
@@ -67,6 +67,7 @@ object PersianTransliterator {
         "بابک" to "Babak",
         "کیان" to "Kian",
         "کوروش" to "Kourosh",
+        "کورش" to "Kourosh",
         "داریوش" to "Dariush",
         "سروش" to "Soroush",
         "بهزاد" to "Behzad",
@@ -77,6 +78,18 @@ object PersianTransliterator {
         "سهراب" to "Sohrab",
         "رستم" to "Rostam",
         "کاوه" to "Kaveh",
+        "کامیار" to "Kamyar",
+        "کیارش" to "Kiarash",
+        "کیومرث" to "Kiumars",
+        "کسری" to "Kasra",
+        "کسرا" to "Kasra",
+        "کریم" to "Karim",
+        "کرم" to "Karam",
+        "کاظم" to "Kazem",
+        "کمال" to "Kamal",
+        "کامبیز" to "Kambiz",
+        "کیوان" to "Keyvan",
+        "کیخسرو" to "Kaykhosrow",
         "احسان" to "Ehsan",
         "اشکان" to "Ashkan",
         "پارسا" to "Parsa",
@@ -86,7 +99,6 @@ object PersianTransliterator {
         "جواد" to "Javad",
         "صادق" to "Sadegh",
         "باقر" to "Bagher",
-        "کاظم" to "Kazem",
         "مرتضی" to "Morteza",
         "مصطفی" to "Mostafa",
         "مجتبی" to "Mojtaba",
@@ -112,6 +124,7 @@ object PersianTransliterator {
         "جهانگیر" to "Jahangir",
         "پرویز" to "Parviz",
         "جمشید" to "Jamshid",
+        "احمد" to "Ahmad",
         "احمدی" to "Ahmadi",
         "حسینی" to "Hosseini",
         "رضایی" to "Rezaei",
@@ -129,7 +142,21 @@ object PersianTransliterator {
         "رستمی" to "Rostami",
         "اکبری" to "Akbari",
         "اسماعیلی" to "Esmaeili",
-        "فرهمند" to "Farahmand"
+        "فرهمند" to "Farahmand",
+        "کاویانی" to "Kavyani",
+        "کیانی" to "Kiani",
+        "کریمیان" to "Karimian",
+        "کوشکی" to "Koushki",
+        "کرمی" to "Karami",
+        "کرمپور" to "Karampour",
+        "کرم‌پور" to "Karampour",
+        "کاظمیان" to "Kazemian",
+        "کلانتری" to "Kalantari",
+        "کوچکی" to "Koochaki",
+        "کاشانی" to "Kashani",
+        "کوهی" to "Koohi",
+        "کوشا" to "Koosha",
+        "کیانیان" to "Kianian"
     )
 
     // Prefixes that should be capitalized
@@ -162,10 +189,11 @@ object PersianTransliterator {
         "مهر" to "Mehr",
         "فرد" to "Fard",
         "اصل" to "Asl",
-        "بگی" to "Beigi"
+        "بگی" to "Beigi",
+        "کیا" to "Kia"
     )
 
-    // Suffixes for compound Iranian family names (e.g. رضازاده, احمدی‌پور)
+    // Suffixes for compound Iranian family names (e.g. رضازاده, احمدی‌پور, کریمی‌کیا)
     private val suffixes = listOf(
         "زاده" to "zadeh",
         "پور" to "pour",
@@ -188,6 +216,27 @@ object PersianTransliterator {
         "شناس" to "shenas",
         "پرور" to "parvar"
     )
+
+    /**
+     * Normalizes all Persian/Arabic characters, specifically:
+     * - 'ک' (Persian Kaf \u06A9) and 'ك' (Arabic Kaf \u0643) -> Unified Persian 'ک'
+     * - 'ی' (Persian Yeh \u06CC) and 'ي' (Arabic Yeh \u064A) -> Unified Persian 'ی'
+     * - Strip tatweel/kashida, diacritics, and normalize ZWNJ
+     */
+    fun normalizeText(input: String): String {
+        val sb = StringBuilder(input.length)
+        for (c in input) {
+            when (c) {
+                '\u0643', '\u06A9' -> sb.append('ک') // Arabic Kaf & Persian Kaf
+                '\u064A', '\u06CC', '\u0649' -> sb.append('ی') // Arabic Yeh & Persian Yeh
+                '\u0640' -> {} // Kashida/Tatweel (ignore)
+                '\u064B', '\u064C', '\u064D', '\u064E', '\u064F', '\u0650', '\u0651', '\u0652' -> {} // Arabic Tashkeel/harakat
+                '\u200C' -> sb.append(' ') // ZWNJ to space
+                else -> sb.append(c)
+            }
+        }
+        return sb.toString()
+    }
 
     /**
      * Converts Persian / Arabic digits to standard ASCII digits.
@@ -231,27 +280,27 @@ object PersianTransliterator {
     }
 
     /**
-     * Transliterates a full Persian name into Latin script.
-     * E.g. "سید علیرضا احمدی پور" -> "Seyed Alireza Ahmadipour" (or "Ahmadi Pour")
+     * Transliterates a full Persian name into Latin script with Persian phoneme handling.
+     * E.g. "سید علیرضا احمدی پور" -> "Seyed Alireza Ahmadipour"
+     * "کاوه کریمی" -> "Kaveh Karimi" (Kaf 'ک' preserved accurately)
      */
     fun transliterate(persianName: String): String {
-        val cleaned = persianName
-            .replace('\u200C', ' ') // replace ZWNJ with space
+        val normalized = normalizeText(persianName)
             .replace(Regex("[\\s_\\-]+"), " ")
             .trim()
 
-        if (cleaned.isEmpty()) return ""
+        if (normalized.isEmpty()) return ""
 
-        val rawTokens = cleaned.split(" ").filter { it.isNotEmpty() }
+        val rawTokens = normalized.split(" ").filter { it.isNotEmpty() }
         val resultTokens = mutableListOf<String>()
 
         var i = 0
         while (i < rawTokens.size) {
             val token = rawTokens[i]
-            // If next token is a particle like پور, زاده, merge them if desired
+            // If next token is a particle like پور, زاده, merge them
             if (i + 1 < rawTokens.size && standaloneParticles.containsKey(rawTokens[i + 1])) {
                 val stemTrans = transliterateToken(token)
-                val particleTrans = standaloneParticles[rawTokens[i + 1]]?.lowercase() ?: ""
+                val particleTrans = standaloneParticles[rawTokens[i + 1]]?.lowercase(Locale.ROOT) ?: ""
                 resultTokens.add(stemTrans + particleTrans)
                 i += 2
                 continue
@@ -279,7 +328,7 @@ object PersianTransliterator {
         // 3. Standalone particles
         standaloneParticles[trimmed]?.let { return it }
 
-        // 4. Suffix check (e.g. رضازاده -> Rezazadeh)
+        // 4. Suffix check (e.g. رضازاده -> Rezazadeh, کریمی‌پور -> Karimipour)
         for ((sufFa, sufEn) in suffixes) {
             if (trimmed.endsWith(sufFa) && trimmed.length > sufFa.length + 1) {
                 val stem = trimmed.substring(0, trimmed.length - sufFa.length)
@@ -288,10 +337,14 @@ object PersianTransliterator {
             }
         }
 
-        // 5. Fallback character-by-character transliteration
+        // 5. High-fidelity phoneme transliteration
         return phoneticallyTransliterate(trimmed)
     }
 
+    /**
+     * Persian phoneme transliteration ensuring 'ک' is always transliterated as 'k' (never dropped),
+     * and digraphs like 'خ' (kh), 'ش' (sh), 'چ' (ch), 'ژ' (zh), 'غ'/'ق' (gh) are recognized.
+     */
     private fun phoneticallyTransliterate(word: String): String {
         val sb = StringBuilder()
         val len = word.length
@@ -302,7 +355,21 @@ object PersianTransliterator {
             val isStart = (i == 0)
             val isEnd = (i == len - 1)
 
+            // Lookahead for digraphs and phoneme patterns
+            val nextC = if (i + 1 < len) word[i + 1] else null
+
+            // Special Persian phoneme: خوا (Khva -> Kha, e.g. خواجه Khajeh, خوانساری Khansari)
+            if (c == 'خ' && nextC == 'و' && i + 2 < len && word[i + 2] == 'ا') {
+                sb.append("kha")
+                i += 3
+                continue
+            }
+
             when (c) {
+                // Kaf: MUST NEVER be ignored! Supports both Persian 'ک' and Arabic 'ك'
+                'ک', '\u0643' -> sb.append("k")
+                'گ' -> sb.append("g")
+
                 'آ' -> sb.append(if (isStart) "A" else "a")
                 'ا' -> {
                     if (isStart) sb.append("A")
@@ -327,27 +394,24 @@ object PersianTransliterator {
                 }
                 'غ', 'ق' -> sb.append("gh")
                 'ف' -> sb.append("f")
-                'ک' -> sb.append("k")
-                'گ' -> sb.append("g")
                 'ل' -> sb.append("l")
                 'م' -> sb.append("m")
                 'ن' -> sb.append("n")
                 'و' -> {
                     if (isStart) sb.append("V")
                     else if (isEnd) sb.append("ou")
-                    else sb.append("ou")
+                    else sb.append("oo")
                 }
                 'ه' -> {
                     if (isEnd) sb.append("eh")
                     else sb.append("h")
                 }
-                'ی', 'ي' -> {
+                'ی', 'ي', 'ى' -> {
                     if (isStart) sb.append("Y")
                     else if (isEnd) sb.append("i")
                     else sb.append("i")
                 }
-                'ء', 'ئ' -> sb.append("'")
-                '‌' -> {}
+                'ء', 'ئ', 'ؤ' -> sb.append("'")
                 ' ' -> sb.append(" ")
                 else -> {
                     if (c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9') {
