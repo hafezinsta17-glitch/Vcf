@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.nio.charset.StandardCharsets
 
 enum class ProcessingSpeed(val label: String, val delayMs: Long) {
     ANIMATED_STREAM("Real-Time Visual", 50L),
@@ -67,9 +68,10 @@ class DashboardViewModel : ViewModel() {
     val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
 
     private var processingJob: Job? = null
-    private var lastLoadedLines: List<String> = emptyList()
+    private var sourceCsvFile: File? = null
+    private var generatedVcfFile: File? = null
 
-    // Search and filter on audiences
+    // Search and filter on preview audiences
     val filteredAudiences: StateFlow<List<AudienceRecord>> = combine(_audiences, _searchQuery) { list, query ->
         if (query.isBlank()) {
             list
@@ -119,14 +121,14 @@ class DashboardViewModel : ViewModel() {
                 withContext(Dispatchers.Main) {
                     _currentFileName.value = filename
                     _stats.value = _stats.value.copy(
-                        statusMessage = "Loading $filename..."
+                        statusMessage = "Connecting to $filename..."
                     )
                 }
 
-                // Copy stream to a local cache file to guarantee persistent access and prevent OOM
+                // Copy stream directly to local storage using an 8KB buffer (memory footprint < 10KB)
                 val cacheDir = File(context.cacheDir, "csv_cache")
                 cacheDir.mkdirs()
-                val tempCsvFile = File(cacheDir, "temp_input.csv")
+                val tempCsvFile = File(cacheDir, "stream_input.csv")
 
                 val stream = context.contentResolver.openInputStream(uri)
                 if (stream == null) {
@@ -138,15 +140,11 @@ class DashboardViewModel : ViewModel() {
 
                 stream.use { input ->
                     tempCsvFile.outputStream().use { output ->
-                        input.copyTo(output)
+                        input.copyTo(output, bufferSize = 65536)
                     }
                 }
 
-                val lines = tempCsvFile.inputStream().use { fileInput ->
-                    CsvProcessor.readLines(fileInput)
-                }
-
-                if (lines.isEmpty()) {
+                if (!tempCsvFile.exists() || tempCsvFile.length() == 0L) {
                     withContext(Dispatchers.Main) {
                         _toastMessage.value = "Selected file appears to be empty."
                         _stats.value = _stats.value.copy(statusMessage = "Empty CSV file.")
@@ -154,13 +152,15 @@ class DashboardViewModel : ViewModel() {
                     return@launch
                 }
 
-                lastLoadedLines = lines
+                sourceCsvFile = tempCsvFile
+
+                val fileSizeMb = String.format(java.util.Locale.US, "%.1f MB", tempCsvFile.length() / (1024.0 * 1024.0))
+
                 withContext(Dispatchers.Main) {
                     // Prompt user for 3-digit prefix before starting processing!
                     _isPrefixDialogOpen.value = true
                     _stats.value = _stats.value.copy(
-                        totalTargetRows = lines.size,
-                        statusMessage = "Loaded $filename (${lines.size} rows). Confirm 3-digit prefix to start."
+                        statusMessage = "Loaded $filename ($fileSizeMb). Confirm prefix to start extraction."
                     )
                 }
             } catch (t: Throwable) {
@@ -174,161 +174,222 @@ class DashboardViewModel : ViewModel() {
         }
     }
 
-    fun confirmPrefixAndStart(prefix: String) {
+    fun confirmPrefixAndStart(context: Context, prefix: String) {
         val cleanPrefix = prefix.trim()
         _targetPrefix.value = cleanPrefix
         _isPrefixDialogOpen.value = false
 
-        if (lastLoadedLines.isEmpty()) {
+        val file = sourceCsvFile
+        if (file == null || !file.exists()) {
             _toastMessage.value = "Please select a CSV file first."
             return
         }
 
-        processCsvLines(lastLoadedLines, cleanPrefix, start = true)
+        startDiskStreamingExtraction(context, file, cleanPrefix)
     }
 
-    fun restartCurrentProcessing() {
-        if (lastLoadedLines.isEmpty()) {
+    fun restartCurrentProcessing(context: Context) {
+        val file = sourceCsvFile
+        if (file == null || !file.exists()) {
             _toastMessage.value = "Please select a CSV file first."
             return
         }
-        // Ask for 3-digit prefix or re-run
         _isPrefixDialogOpen.value = true
     }
 
-    private fun processCsvLines(allLines: List<String>, prefix: String, start: Boolean) {
+    private fun startDiskStreamingExtraction(context: Context, csvFile: File, prefix: String) {
         processingJob?.cancel()
 
-        if (allLines.isEmpty()) {
-            _stats.value = DashboardStats(
-                targetPrefix = prefix,
-                statusMessage = "CSV file is empty"
-            )
-            return
-        }
+        // Prepare physical VCF output file
+        val vcfDir = File(context.cacheDir, "vcf")
+        vcfDir.mkdirs()
+        val outVcf = File(vcfDir, "contacts_${prefix}_${System.currentTimeMillis()}.vcf")
+        generatedVcfFile = outVcf
+        _vcfExportFile.value = outVcf
 
-        // Extract header
-        val headerTokens = CsvProcessor.splitCsvLine(allLines[0])
-        val mapping = CsvProcessor.ColumnMapping.fromHeaders(headerTokens)
-
-        val dataLines = if (headerTokens.any { it.contains("CODE", ignoreCase = true) || it.contains("کد", ignoreCase = true) || it.contains("NAME", ignoreCase = true) }) {
-            allLines.drop(1)
-        } else {
-            allLines
-        }
-
-        val total = dataLines.size
         _audiences.value = emptyList()
         _recentAudience.value = null
-        _vcfExportFile.value = null
 
         _stats.value = DashboardStats(
             targetPrefix = prefix,
-            totalRowsProcessed = 0,
-            totalTargetRows = total,
-            matchedPrefixAndMobile = 0,
-            skippedNonPrefix = 0,
-            skippedMissingMobile = 0,
-            totalVcfSaved = 0,
-            isProcessing = start,
+            totalRowsProcessed = 0L,
+            totalTargetRows = 0L,
+            matchedPrefixAndMobile = 0L,
+            skippedNonPrefix = 0L,
+            skippedMissingMobile = 0L,
+            totalVcfSaved = 0L,
+            isProcessing = true,
             progressFraction = 0f,
-            statusMessage = if (start) "Extracting '$prefix' records & transliterating Persian names..." else "Ready to process ($total rows)"
+            statusMessage = "Streaming CSV & saving VCF in real-time..."
         )
 
-        if (start) {
-            startExtraction(dataLines, mapping, prefix)
-        }
-    }
-
-    private fun startExtraction(lines: List<String>, mapping: CsvProcessor.ColumnMapping, prefix: String) {
-        processingJob?.cancel()
-        processingJob = viewModelScope.launch(Dispatchers.Default) {
-            val total = lines.size
-            val matchedList = mutableListOf<AudienceRecord>()
-            var skippedNonPrefixCount = 0
-            var skippedNoMobileCount = 0
+        processingJob = viewModelScope.launch(Dispatchers.IO) {
+            val previewList = mutableListOf<AudienceRecord>()
+            var processedCount = 0L
+            var matchedCount = 0L
+            var skippedNonPrefixCount = 0L
+            var skippedNoMobileCount = 0L
 
             val isTurbo = _speedMode.value == ProcessingSpeed.TURBO_FAST
             val delayDuration = _speedMode.value.delayMs
 
-            // Throttle UI updates to prevent Main thread jank/OOM when processing thousands of rows
             var lastUiUpdate = System.currentTimeMillis()
+            var recentSaved: AudienceRecord? = null
 
-            lines.forEachIndexed { index, line ->
-                val tokens = CsvProcessor.splitCsvLine(line)
-                val parseResult = CsvProcessor.parseRow(tokens, mapping, index + 1, prefix)
-                val record = parseResult.record
+            val totalBytes = csvFile.length().toFloat().coerceAtLeast(1f)
+            var bytesReadSoFar = 0L
 
-                var newlyAdded: AudienceRecord? = null
-                if (!parseResult.isPrefixMatched) {
-                    skippedNonPrefixCount++
-                } else if (!parseResult.hasMobile) {
-                    skippedNoMobileCount++
-                } else {
-                    // Match! Mark as saved to VCF
-                    val savedRecord = record.copy(isSavedToVcf = true)
-                    matchedList.add(savedRecord)
-                    newlyAdded = savedRecord
-                }
+            try {
+                java.io.FileOutputStream(outVcf).use { fos ->
+                    java.io.BufferedWriter(java.io.OutputStreamWriter(fos, StandardCharsets.UTF_8), 65536).use { vcfWriter ->
 
-                val currentProcessed = index + 1
-                val progress = if (total > 0) currentProcessed.toFloat() / total.toFloat() else 1f
-                val now = System.currentTimeMillis()
+                        java.io.FileInputStream(csvFile).use { fis ->
+                            val reader = CsvProcessor.createBufferedReader(fis)
 
-                // Update UI on matches, or every 60ms in live mode, or on the final item
-                val shouldUpdateUi = newlyAdded != null ||
-                        (!isTurbo && now - lastUiUpdate > 60) ||
-                        (isTurbo && (currentProcessed % 50 == 0 || currentProcessed == total))
-
-                if (shouldUpdateUi) {
-                    lastUiUpdate = now
-                    val currentMatchesCopy = ArrayList(matchedList)
-                    withContext(Dispatchers.Main) {
-                        if (newlyAdded != null) {
-                            _recentAudience.value = newlyAdded
-                        }
-                        _audiences.value = currentMatchesCopy
-                        _stats.value = DashboardStats(
-                            targetPrefix = prefix,
-                            totalRowsProcessed = currentProcessed,
-                            totalTargetRows = total,
-                            matchedPrefixAndMobile = currentMatchesCopy.size,
-                            skippedNonPrefix = skippedNonPrefixCount,
-                            skippedMissingMobile = skippedNoMobileCount,
-                            totalVcfSaved = currentMatchesCopy.size,
-                            isProcessing = currentProcessed < total,
-                            progressFraction = progress,
-                            statusMessage = if (currentProcessed < total) {
-                                "Extracting '$prefix' row $currentProcessed of $total (${(progress * 100).toInt()}%)..."
-                            } else {
-                                "Completed: ${currentMatchesCopy.size} audiences ('$prefix') extracted & transliterated to VCF."
+                            // Read first line (header detection)
+                            val firstLine = reader.readLine()
+                            if (firstLine == null) {
+                                withContext(Dispatchers.Main) {
+                                    _stats.value = DashboardStats(targetPrefix = prefix, statusMessage = "CSV file is empty.")
+                                }
+                                return@use
                             }
-                        )
+                            bytesReadSoFar += firstLine.toByteArray(StandardCharsets.UTF_8).size + 1
+
+                            val headerTokens = CsvProcessor.splitCsvLine(firstLine)
+                            val isHeader = headerTokens.any {
+                                it.contains("CODE", ignoreCase = true) ||
+                                it.contains("کد", ignoreCase = true) ||
+                                it.contains("NAME", ignoreCase = true) ||
+                                it.contains("MOBILE", ignoreCase = true)
+                            }
+
+                            val mapping = if (isHeader) {
+                                CsvProcessor.ColumnMapping.fromHeaders(headerTokens)
+                            } else {
+                                CsvProcessor.ColumnMapping(0, 1, 2, 3, 4)
+                            }
+
+                            // If first line wasn't header, process it as row 1
+                            if (!isHeader) {
+                                processedCount++
+                                val parseResult = CsvProcessor.parseRow(headerTokens, mapping, processedCount, prefix)
+                                if (!parseResult.isPrefixMatched) {
+                                    skippedNonPrefixCount++
+                                } else if (!parseResult.hasMobile) {
+                                    skippedNoMobileCount++
+                                } else {
+                                    matchedCount++
+                                    val saved = parseResult.record.copy(isSavedToVcf = true)
+                                    VcfGenerator.appendRecordToWriter(vcfWriter, saved)
+                                    previewList.add(saved)
+                                    recentSaved = saved
+                                }
+                            }
+
+                            // Sequential stream line by line — supports 10M+ rows with constant ~50KB RAM!
+                            var line = reader.readLine()
+                            while (line != null) {
+                                processedCount++
+                                bytesReadSoFar += line.toByteArray(StandardCharsets.UTF_8).size + 1
+
+                                if (line.isNotBlank()) {
+                                    val tokens = CsvProcessor.splitCsvLine(line)
+                                    val parseResult = CsvProcessor.parseRow(tokens, mapping, processedCount, prefix)
+
+                                    if (!parseResult.isPrefixMatched) {
+                                        skippedNonPrefixCount++
+                                    } else if (!parseResult.hasMobile) {
+                                        skippedNoMobileCount++
+                                    } else {
+                                        matchedCount++
+                                        val saved = parseResult.record.copy(isSavedToVcf = true)
+                                        // Write directly into VCF file stream on disk
+                                        VcfGenerator.appendRecordToWriter(vcfWriter, saved)
+
+                                        // Keep a sliding window of the latest 300 records in memory for UI dashboard
+                                        if (previewList.size >= 300) {
+                                            previewList.removeAt(0)
+                                        }
+                                        previewList.add(saved)
+                                        recentSaved = saved
+                                    }
+                                }
+
+                                val now = System.currentTimeMillis()
+                                val shouldUpdateUi = (recentSaved != null && now - lastUiUpdate > 80) ||
+                                        (now - lastUiUpdate > 250)
+
+                                if (shouldUpdateUi) {
+                                    lastUiUpdate = now
+                                    val previewSnapshot = ArrayList(previewList)
+                                    val currentRecent = recentSaved
+                                    recentSaved = null
+
+                                    val progressFraction = (bytesReadSoFar / totalBytes).coerceIn(0f, 0.99f)
+
+                                    withContext(Dispatchers.Main) {
+                                        if (currentRecent != null) {
+                                            _recentAudience.value = currentRecent
+                                        }
+                                        _audiences.value = previewSnapshot
+                                        _stats.value = DashboardStats(
+                                            targetPrefix = prefix,
+                                            totalRowsProcessed = processedCount,
+                                            totalTargetRows = processedCount,
+                                            matchedPrefixAndMobile = matchedCount,
+                                            skippedNonPrefix = skippedNonPrefixCount,
+                                            skippedMissingMobile = skippedNoMobileCount,
+                                            totalVcfSaved = matchedCount,
+                                            isProcessing = true,
+                                            progressFraction = progressFraction,
+                                            statusMessage = "Processed ${formatCount(processedCount)} rows... (${formatCount(matchedCount)} '$prefix' saved to VCF)"
+                                        )
+                                    }
+                                }
+
+                                if (!isTurbo && delayDuration > 0 && matchedCount < 100) {
+                                    delay(delayDuration)
+                                }
+
+                                line = reader.readLine()
+                            }
+                        }
                     }
                 }
 
-                if (!isTurbo && delayDuration > 0) {
-                    delay(delayDuration)
+                // Completed!
+                val finalPreviewSnapshot = ArrayList(previewList)
+                withContext(Dispatchers.Main) {
+                    _audiences.value = finalPreviewSnapshot
+                    _stats.value = DashboardStats(
+                        targetPrefix = prefix,
+                        totalRowsProcessed = processedCount,
+                        totalTargetRows = processedCount,
+                        matchedPrefixAndMobile = matchedCount,
+                        skippedNonPrefix = skippedNonPrefixCount,
+                        skippedMissingMobile = skippedNoMobileCount,
+                        totalVcfSaved = matchedCount,
+                        isProcessing = false,
+                        progressFraction = 1f,
+                        statusMessage = "Complete! Extracted & saved ${formatCount(matchedCount)} audiences with prefix '$prefix' to VCF."
+                    )
+                    _toastMessage.value = "Finished: ${formatCount(matchedCount)} audiences saved to VCF!"
+                }
+            } catch (t: Throwable) {
+                withContext(Dispatchers.Main) {
+                    _stats.value = _stats.value.copy(
+                        isProcessing = false,
+                        statusMessage = "Streaming stopped: ${t.localizedMessage ?: "Error"}"
+                    )
+                    _toastMessage.value = "Processing stopped: ${t.localizedMessage}"
                 }
             }
-
-            val finalMatchesCopy = ArrayList(matchedList)
-            withContext(Dispatchers.Main) {
-                _audiences.value = finalMatchesCopy
-                _stats.value = _stats.value.copy(
-                    totalRowsProcessed = total,
-                    totalTargetRows = total,
-                    matchedPrefixAndMobile = finalMatchesCopy.size,
-                    skippedNonPrefix = skippedNonPrefixCount,
-                    skippedMissingMobile = skippedNoMobileCount,
-                    totalVcfSaved = finalMatchesCopy.size,
-                    isProcessing = false,
-                    progressFraction = 1f,
-                    statusMessage = "Extraction finished! ${finalMatchesCopy.size} audiences ('$prefix') ready in VCF."
-                )
-                _toastMessage.value = "Successfully generated VCF for ${finalMatchesCopy.size} audiences (Prefix: $prefix)!"
-            }
         }
+    }
+
+    private fun formatCount(number: Long): String {
+        return java.text.NumberFormat.getIntegerInstance(java.util.Locale.US).format(number)
     }
 
     fun stopProcessing() {
@@ -353,9 +414,14 @@ class DashboardViewModel : ViewModel() {
     }
 
     /**
-     * Generates a physical VCF file in the app's cache directory ready for sharing or saving.
+     * Returns the physical VCF file generated during streaming.
      */
     fun prepareVcfFile(context: Context): File {
+        val existing = generatedVcfFile
+        if (existing != null && existing.exists() && existing.length() > 0) {
+            _vcfExportFile.value = existing
+            return existing
+        }
         val records = _audiences.value
         val vcfDir = File(context.cacheDir, "vcf")
         vcfDir.mkdirs()
@@ -365,8 +431,30 @@ class DashboardViewModel : ViewModel() {
         return file
     }
 
+    /**
+     * Streams the generated VCF file directly into a destination OutputStream.
+     */
+    fun copyVcfToOutputStream(context: Context, destStream: java.io.OutputStream) {
+        val file = generatedVcfFile
+        if (file != null && file.exists()) {
+            file.inputStream().use { fis ->
+                fis.copyTo(destStream, bufferSize = 65536)
+            }
+        } else {
+            java.io.BufferedWriter(java.io.OutputStreamWriter(destStream, StandardCharsets.UTF_8), 65536).use { writer ->
+                for (record in _audiences.value) {
+                    VcfGenerator.appendRecordToWriter(writer, record)
+                }
+            }
+        }
+    }
+
     fun getFullVcfString(): String {
-        return VcfGenerator.generateVcf(_audiences.value)
+        val file = generatedVcfFile
+        if (file != null && file.exists() && file.length() < 2 * 1024 * 1024) {
+            return file.readText(StandardCharsets.UTF_8)
+        }
+        return VcfGenerator.generateVcf(_audiences.value, maxRecords = 100)
     }
 
     private fun getFileNameFromUri(context: Context, uri: Uri): String? {

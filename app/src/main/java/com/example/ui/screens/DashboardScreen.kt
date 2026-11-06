@@ -144,21 +144,23 @@ fun DashboardScreen(
         }
     }
 
-    // Save VCF Document Launcher (SAF)
+    // Save VCF Document Launcher (SAF) - streams directly to avoid OOM even on gigabyte VCFs
     val saveVcfLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/x-vcard")
     ) { uri: Uri? ->
         uri?.let { destUri ->
-            scope.launch {
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 try {
                     context.contentResolver.openOutputStream(destUri)?.use { os ->
-                        OutputStreamWriter(os, StandardCharsets.UTF_8).use { writer ->
-                            writer.write(viewModel.getFullVcfString())
-                        }
+                        viewModel.copyVcfToOutputStream(context, os)
                     }
-                    Toast.makeText(context, "VCF file saved successfully!", Toast.LENGTH_LONG).show()
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        Toast.makeText(context, "VCF file saved successfully!", Toast.LENGTH_LONG).show()
+                    }
                 } catch (e: Exception) {
-                    Toast.makeText(context, "Error saving VCF: ${e.message}", Toast.LENGTH_LONG).show()
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        Toast.makeText(context, "Error saving VCF: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }
@@ -288,7 +290,7 @@ fun DashboardScreen(
 
                     // Reset / Re-run
                     IconButton(
-                        onClick = { viewModel.restartCurrentProcessing() },
+                        onClick = { viewModel.restartCurrentProcessing(context) },
                         modifier = Modifier.testTag("restart_processing_button")
                     ) {
                         Icon(
@@ -325,7 +327,7 @@ fun DashboardScreen(
                         if (stats.isProcessing) {
                             viewModel.stopProcessing()
                         } else {
-                            viewModel.restartCurrentProcessing()
+                            viewModel.restartCurrentProcessing(context)
                         }
                     }
                 )
@@ -432,7 +434,7 @@ fun DashboardScreen(
             fileName = if (fileName != "No CSV file loaded") fileName else null,
             onDismiss = { viewModel.closePrefixDialog() },
             onConfirm = { chosenPrefix ->
-                viewModel.confirmPrefixAndStart(chosenPrefix)
+                viewModel.confirmPrefixAndStart(context, chosenPrefix)
             }
         )
     }
@@ -575,8 +577,9 @@ private fun RealTimeProgressCard(
                     )
                 }
 
+                val formattedProcessed = java.text.NumberFormat.getIntegerInstance(java.util.Locale.US).format(stats.totalRowsProcessed)
                 Text(
-                    text = "${stats.totalRowsProcessed} / ${stats.totalTargetRows} rows",
+                    text = "$formattedProcessed rows scanned",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White
@@ -638,6 +641,7 @@ private fun RealTimeProgressCard(
 @Composable
 private fun MetricsGrid(stats: com.example.model.DashboardStats) {
     val prefix = stats.targetPrefix
+    val nf = java.text.NumberFormat.getIntegerInstance(java.util.Locale.US)
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -648,7 +652,7 @@ private fun MetricsGrid(stats: com.example.model.DashboardStats) {
         ) {
             MetricCard(
                 title = "Total Scanned",
-                value = stats.totalRowsProcessed.toString(),
+                value = nf.format(stats.totalRowsProcessed),
                 icon = Icons.Default.Storage,
                 tint = Cyan400,
                 modifier = Modifier.weight(1f),
@@ -657,7 +661,7 @@ private fun MetricsGrid(stats: com.example.model.DashboardStats) {
 
             MetricCard(
                 title = "$prefix + Mobile",
-                value = stats.matchedPrefixAndMobile.toString(),
+                value = nf.format(stats.matchedPrefixAndMobile),
                 icon = Icons.Default.CheckCircle,
                 tint = Emerald400,
                 modifier = Modifier.weight(1f),
@@ -671,7 +675,7 @@ private fun MetricsGrid(stats: com.example.model.DashboardStats) {
         ) {
             MetricCard(
                 title = "Skipped (Non-$prefix)",
-                value = stats.skippedNonPrefix.toString(),
+                value = nf.format(stats.skippedNonPrefix),
                 icon = Icons.Default.FilterAlt,
                 tint = Amber400,
                 modifier = Modifier.weight(1f),
@@ -680,7 +684,7 @@ private fun MetricsGrid(stats: com.example.model.DashboardStats) {
 
             MetricCard(
                 title = "Skipped (No Mobile)",
-                value = stats.skippedMissingMobile.toString(),
+                value = nf.format(stats.skippedMissingMobile),
                 icon = Icons.Default.FilterAlt,
                 tint = Rose500,
                 modifier = Modifier.weight(1f),

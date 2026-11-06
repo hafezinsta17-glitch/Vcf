@@ -5,7 +5,7 @@ package com.example.model
  */
 data class AudienceRecord(
     val id: String,
-    val rowNumber: Int,
+    val rowNumber: Long,
     val nationalCode: String,
     val cardNo: String,
     val fullNamePersian: String,
@@ -26,12 +26,12 @@ data class AudienceRecord(
  */
 data class DashboardStats(
     val targetPrefix: String = "469",
-    val totalRowsProcessed: Int = 0,
-    val totalTargetRows: Int = 0,
-    val matchedPrefixAndMobile: Int = 0,
-    val skippedNonPrefix: Int = 0,
-    val skippedMissingMobile: Int = 0,
-    val totalVcfSaved: Int = 0,
+    val totalRowsProcessed: Long = 0L,
+    val totalTargetRows: Long = 0L,
+    val matchedPrefixAndMobile: Long = 0L,
+    val skippedNonPrefix: Long = 0L,
+    val skippedMissingMobile: Long = 0L,
+    val totalVcfSaved: Long = 0L,
     val isProcessing: Boolean = false,
     val progressFraction: Float = 0f,
     val statusMessage: String = "Select a CSV database file to begin extraction"

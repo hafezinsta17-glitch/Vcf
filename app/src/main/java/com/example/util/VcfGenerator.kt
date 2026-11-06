@@ -9,20 +9,19 @@ import java.nio.charset.StandardCharsets
 object VcfGenerator {
 
     /**
-     * Converts a single AudienceRecord into standard vCard 3.0 text block.
+     * Streams an individual record directly to a Writer with no intermediate string concatenation.
      */
-    fun recordToVcard(record: AudienceRecord): String {
+    fun appendRecordToWriter(writer: java.io.Writer, record: AudienceRecord) {
         val names = record.fullNameLatin.trim().split(" ").filter { it.isNotEmpty() }
         val firstName = if (names.isNotEmpty()) names.first() else ""
         val lastName = if (names.size > 1) names.subList(1, names.size).joinToString(" ") else ""
 
-        val sb = StringBuilder()
-        sb.appendLine("BEGIN:VCARD")
-        sb.appendLine("VERSION:3.0")
-        sb.appendLine("FN:${escapeVcf(record.fullNameLatin)}")
-        sb.appendLine("N:${escapeVcf(lastName)};${escapeVcf(firstName)};;;")
+        writer.write("BEGIN:VCARD\r\n")
+        writer.write("VERSION:3.0\r\n")
+        writer.write("FN:${escapeVcf(record.fullNameLatin)}\r\n")
+        writer.write("N:${escapeVcf(lastName)};${escapeVcf(firstName)};;;\r\n")
         if (record.mobile.isNotBlank()) {
-            sb.appendLine("TEL;TYPE=CELL,VOICE:${record.mobile}")
+            writer.write("TEL;TYPE=CELL,VOICE:${record.mobile}\r\n")
         }
         val noteContent = buildString {
             append("National Code: ${record.nationalCode}")
@@ -30,31 +29,43 @@ object VcfGenerator {
             if (record.birthDate.isNotBlank()) append(" | Birth: ${record.birthDate}")
             if (record.fullNamePersian.isNotBlank()) append(" | Persian Name: ${record.fullNamePersian}")
         }
-        sb.appendLine("NOTE:${escapeVcf(noteContent)}")
-        sb.appendLine("X-NATIONAL-CODE:${escapeVcf(record.nationalCode)}")
+        writer.write("NOTE:${escapeVcf(noteContent)}\r\n")
+        writer.write("X-NATIONAL-CODE:${escapeVcf(record.nationalCode)}\r\n")
         if (record.cardNo.isNotBlank()) {
-            sb.appendLine("X-CARD-NO:${escapeVcf(record.cardNo)}")
+            writer.write("X-CARD-NO:${escapeVcf(record.cardNo)}\r\n")
         }
         if (record.birthDate.isNotBlank()) {
-            sb.appendLine("X-BIRTH-DATE:${escapeVcf(record.birthDate)}")
+            writer.write("X-BIRTH-DATE:${escapeVcf(record.birthDate)}\r\n")
         }
         if (record.fullNamePersian.isNotBlank()) {
-            sb.appendLine("X-PERSIAN-NAME:${escapeVcf(record.fullNamePersian)}")
+            writer.write("X-PERSIAN-NAME:${escapeVcf(record.fullNamePersian)}\r\n")
         }
-        sb.appendLine("CATEGORIES:ParsVCF,Audience-${record.matchedPrefix}")
-        sb.appendLine("END:VCARD")
-        return sb.toString()
+        writer.write("CATEGORIES:ParsVCF,Audience-${record.matchedPrefix}\r\n")
+        writer.write("END:VCARD\r\n")
     }
 
     /**
-     * Converts an entire collection of audience records into a full VCF file string.
+     * Converts a single AudienceRecord into standard vCard 3.0 text block.
      */
-    fun generateVcf(records: List<AudienceRecord>): String {
-        val sb = StringBuilder()
-        for (record in records) {
-            sb.append(recordToVcard(record))
+    fun recordToVcard(record: AudienceRecord): String {
+        val sw = java.io.StringWriter(256)
+        appendRecordToWriter(sw, record)
+        return sw.toString()
+    }
+
+    /**
+     * Converts an entire collection of audience records into a full VCF file string (for small preview).
+     */
+    fun generateVcf(records: List<AudienceRecord>, maxRecords: Int = 100): String {
+        val sw = java.io.StringWriter()
+        val slice = if (records.size > maxRecords) records.take(maxRecords) else records
+        for (record in slice) {
+            appendRecordToWriter(sw, record)
         }
-        return sb.toString()
+        if (records.size > maxRecords) {
+            sw.write("\r\n# ... and ${records.size - maxRecords} more contacts saved in complete VCF file\r\n")
+        }
+        return sw.toString()
     }
 
     /**
@@ -63,9 +74,9 @@ object VcfGenerator {
     fun writeToFile(file: File, records: List<AudienceRecord>) {
         file.parentFile?.mkdirs()
         FileOutputStream(file).use { fos ->
-            OutputStreamWriter(fos, StandardCharsets.UTF_8).use { writer ->
+            java.io.BufferedWriter(OutputStreamWriter(fos, StandardCharsets.UTF_8), 65536).use { writer ->
                 for (record in records) {
-                    writer.write(recordToVcard(record))
+                    appendRecordToWriter(writer, record)
                 }
             }
         }
@@ -75,6 +86,7 @@ object VcfGenerator {
         return value.replace("\\", "\\\\")
             .replace(",", "\\,")
             .replace(";", "\\;")
+            .replace("\r", "")
             .replace("\n", "\\n")
     }
 }
