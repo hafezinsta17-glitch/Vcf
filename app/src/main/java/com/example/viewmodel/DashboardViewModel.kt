@@ -85,6 +85,112 @@ class DashboardViewModel : ViewModel() {
         }
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
+    /**
+     * Initializes the ViewModel and restores any previous session state if the app was accidentally closed.
+     */
+    fun restorePreviousSessionOnLaunch(context: Context) {
+        val prefs = context.getSharedPreferences("parsvcf_checkpoint", Context.MODE_PRIVATE)
+        val lastFile = prefs.getString("last_file_name", null)
+        val lastPrefix = prefs.getString("last_prefix", "469") ?: "469"
+        val lastProcessedRow = prefs.getLong("last_processed_row", 0L)
+        val savedCount = prefs.getLong("last_saved_count", 0L)
+        val isFinished = prefs.getBoolean("is_finished", false)
+
+        _targetPrefix.value = lastPrefix
+
+        // Locate persistent VCF in filesDir (guaranteed to survive app closures)
+        val vcfDir = File(context.filesDir, "vcf_store")
+        vcfDir.mkdirs()
+        val persistentVcf = File(vcfDir, "contacts_${lastPrefix}_persistent.vcf")
+
+        if (persistentVcf.exists() && persistentVcf.length() > 0) {
+            generatedVcfFile = persistentVcf
+            _vcfExportFile.value = persistentVcf
+        }
+
+        if (!lastFile.isNullOrBlank() && lastProcessedRow > 0L) {
+            _currentFileName.value = lastFile
+
+            // Also check if cached input CSV is still available
+            val cacheCsv = File(context.filesDir, "stream_input.csv")
+            if (cacheCsv.exists() && cacheCsv.length() > 0) {
+                sourceCsvFile = cacheCsv
+            }
+
+            _stats.value = DashboardStats(
+                targetPrefix = lastPrefix,
+                totalRowsProcessed = lastProcessedRow,
+                totalTargetRows = lastProcessedRow,
+                matchedPrefixAndMobile = savedCount,
+                skippedNonPrefix = prefs.getLong("last_skipped_non_prefix", 0L),
+                skippedMissingMobile = prefs.getLong("last_skipped_no_mobile", 0L),
+                totalVcfSaved = savedCount,
+                isProcessing = false,
+                progressFraction = if (isFinished) 1f else 0.5f,
+                statusMessage = if (isFinished) {
+                    "Previous scan complete: ${formatCount(savedCount)} contacts saved in VCF."
+                } else {
+                    "Previous session saved: row ${formatCount(lastProcessedRow)} (${formatCount(savedCount)} contacts). Select file or resume."
+                }
+            )
+
+            // Populate sample preview from existing VCF file if preview list is empty
+            if (_audiences.value.isEmpty() && persistentVcf.exists()) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    val previewItems = readTailFromVcf(persistentVcf, maxRecords = 50)
+                    withContext(Dispatchers.Main) {
+                        _audiences.value = previewItems
+                    }
+                }
+            }
+        }
+    }
+
+    private fun readTailFromVcf(file: File, maxRecords: Int): List<AudienceRecord> {
+        val list = mutableListOf<AudienceRecord>()
+        try {
+            var currentFn = ""
+            var currentTel = ""
+            var currentNat = ""
+            var count = 0L
+
+            file.forEachLine { line ->
+                val trimmed = line.trim()
+                if (trimmed.startsWith("FN")) {
+                    currentFn = trimmed.substringAfter(":", "").replace("\\,", ",")
+                } else if (trimmed.startsWith("TEL")) {
+                    currentTel = trimmed.substringAfter(":", "")
+                } else if (trimmed.startsWith("X-NATIONAL-CODE")) {
+                    currentNat = trimmed.substringAfter(":", "")
+                } else if (trimmed == "END:VCARD") {
+                    count++
+                    val rec = AudienceRecord(
+                        id = "restored_$count",
+                        rowNumber = count,
+                        nationalCode = currentNat,
+                        cardNo = "",
+                        fullNamePersian = currentFn,
+                        fullNameLatin = currentFn,
+                        birthDate = "",
+                        mobile = currentTel,
+                        matchedPrefix = _targetPrefix.value,
+                        isPrefixMatched = true,
+                        hasMobile = true,
+                        isSavedToVcf = true
+                    )
+                    if (list.size >= maxRecords) {
+                        list.removeAt(0)
+                    }
+                    list.add(rec)
+                    currentFn = ""
+                    currentTel = ""
+                    currentNat = ""
+                }
+            }
+        } catch (_: Throwable) {}
+        return list
+    }
+
     fun toggleSpeedMode() {
         _speedMode.value = if (_speedMode.value == ProcessingSpeed.ANIMATED_STREAM) {
             ProcessingSpeed.TURBO_FAST
@@ -124,10 +230,8 @@ class DashboardViewModel : ViewModel() {
                     )
                 }
 
-                // Copy stream directly to local storage using an 8KB buffer (memory footprint < 10KB)
-                val cacheDir = File(context.cacheDir, "csv_cache")
-                cacheDir.mkdirs()
-                val tempCsvFile = File(cacheDir, "stream_input.csv")
+                // Copy stream to persistent app storage in filesDir (never deleted by OS cache clearing)
+                val tempCsvFile = File(context.filesDir, "stream_input.csv")
 
                 val stream = context.contentResolver.openInputStream(uri)
                 if (stream == null) {
@@ -162,7 +266,7 @@ class DashboardViewModel : ViewModel() {
                 val savedCount = prefs.getLong("last_saved_count", 0L)
 
                 val resumeMsg = if (lastScannedFile == filename && lastProcessedRow > 0L) {
-                    "Resuming $filename from row ${formatCount(lastProcessedRow)} ($savedCount contacts previously saved)."
+                    "Resuming $filename from row ${formatCount(lastProcessedRow)} ($savedCount contacts already saved in VCF)."
                 } else {
                     "Loaded $filename ($fileSizeMb). Confirm prefix to start extraction."
                 }
@@ -220,14 +324,14 @@ class DashboardViewModel : ViewModel() {
         var skippedNonPrefixCount = if (isSameFile) prefs.getLong("last_skipped_non_prefix", 0L) else 0L
         var skippedNoMobileCount = if (isSameFile) prefs.getLong("last_skipped_no_mobile", 0L) else 0L
 
-        // Prepare physical persistent VCF output file
-        val vcfDir = File(context.cacheDir, "vcf")
+        // Prepare physical persistent VCF output file in filesDir (survives app close and cache clear)
+        val vcfDir = File(context.filesDir, "vcf_store")
         vcfDir.mkdirs()
         val outVcf = File(vcfDir, "contacts_${prefix}_persistent.vcf")
         generatedVcfFile = outVcf
         _vcfExportFile.value = outVcf
 
-        // If not resuming a previous session of the same file, reset the VCF file
+        // If starting a brand new file or different prefix, reset checkpoint
         if (!isSameFile || !outVcf.exists() || resumeRow == 0L) {
             outVcf.delete()
             matchedCount = 0L
@@ -481,9 +585,14 @@ class DashboardViewModel : ViewModel() {
             _vcfExportFile.value = existing
             return existing
         }
-        val records = _audiences.value
-        val vcfDir = File(context.cacheDir, "vcf")
+        val vcfDir = File(context.filesDir, "vcf_store")
         vcfDir.mkdirs()
+        val persistent = File(vcfDir, "contacts_${_targetPrefix.value}_persistent.vcf")
+        if (persistent.exists() && persistent.length() > 0) {
+            _vcfExportFile.value = persistent
+            return persistent
+        }
+        val records = _audiences.value
         val file = File(vcfDir, "contacts_${_targetPrefix.value}_${System.currentTimeMillis()}.vcf")
         VcfGenerator.writeToFile(file, records)
         _vcfExportFile.value = file

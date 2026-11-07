@@ -166,6 +166,11 @@ fun DashboardScreen(
         }
     }
 
+    // Restore previous session checkpoint and VCF file if app was accidentally closed
+    LaunchedEffect(Unit) {
+        viewModel.restorePreviousSessionOnLaunch(context)
+    }
+
     // Show toast message if any
     LaunchedEffect(toastMessage) {
         toastMessage?.let {
