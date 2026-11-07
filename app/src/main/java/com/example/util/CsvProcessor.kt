@@ -73,15 +73,15 @@ object CsvProcessor {
         val rawBirth = getVal(mapping.birthDateIdx)
         val rawMob = getVal(mapping.mobileIdx)
 
-        val cleanNat = PersianTransliterator.normalizeDigits(rawNat).filter { it.isDigit() }
-        val cleanMob = PersianTransliterator.normalizeMobile(rawMob)
-        val cleanCard = PersianTransliterator.normalizeDigits(rawCard).filter { it.isDigit() }
+        val cleanNat = PersianAiTransliterator.normalizeDigits(rawNat).filter { it.isDigit() }
+        val cleanMob = PersianAiTransliterator.normalizeMobile(rawMob)
+        val cleanCard = PersianAiTransliterator.normalizeDigits(rawCard).filter { it.isDigit() }
 
         val isPrefixMatched = cleanNat.startsWith(targetPrefix)
         val hasMobile = cleanMob.isNotBlank()
 
         val latinName = if (rawName.isNotBlank()) {
-            PersianTransliterator.transliterate(rawName)
+            PersianAiTransliterator.transliterate(rawName)
         } else {
             "Contact $cleanNat"
         }
