@@ -9,154 +9,89 @@ import java.util.Locale
  */
 object PersianTransliterator {
 
-    // Common Iranian First Names and Family Names dictionary for natural romanization
+    // Comprehensive Iranian Given & Family names dictionary (automatically vocalized with correct vowels)
     private val commonGivenNames = mapOf(
-        "محمد" to "Mohammad",
-        "علی" to "Ali",
-        "حسین" to "Hossein",
-        "حسن" to "Hassan",
-        "رضا" to "Reza",
-        "علیرضا" to "Alireza",
-        "محمدرضا" to "Mohammadreza",
-        "احمدرضا" to "Ahmadreza",
-        "غلامرضا" to "Gholamreza",
-        "حمیدرضا" to "Hamidreza",
-        "امیررضا" to "Amirreza",
-        "امیر" to "Amir",
-        "امیرعلی" to "Amirali",
-        "امیرحسین" to "Amirhossein",
-        "امیرمحمد" to "Amirmohammad",
-        "مهدی" to "Mehdi",
-        "محمدمهدی" to "Mohammadmehdi",
-        "فاطمه" to "Fatemeh",
-        "زهرا" to "Zahra",
-        "مریم" to "Maryam",
-        "معصومه" to "Masoumeh",
-        "زینب" to "Zeinab",
-        "نرگس" to "Narges",
-        "سارا" to "Sara",
-        "ندا" to "Neda",
-        "نازنین" to "Nazanin",
-        "الهام" to "Elham",
-        "بهاره" to "Bahareh",
-        "رویا" to "Roya",
-        "آرزو" to "Arezoo",
-        "سمیرا" to "Samira",
-        "شیما" to "Shima",
-        "نگار" to "Negar",
-        "پریسا" to "Parisa",
-        "مینا" to "Mina",
-        "سمیه" to "Somayeh",
-        "سعید" to "Saeed",
-        "حمید" to "Hamid",
-        "مجید" to "Majid",
-        "وحید" to "Vahid",
-        "امید" to "Omid",
-        "نوید" to "Navid",
-        "فرشید" to "Farshid",
-        "فرزاد" to "Farzad",
-        "فرهاد" to "Farhad",
-        "پیمان" to "Peyman",
-        "پویا" to "Pouya",
-        "پژمان" to "Pezhman",
-        "کامران" to "Kamran",
-        "سامان" to "Saman",
-        "آرش" to "Arash",
-        "آرمان" to "Arman",
-        "بهرام" to "Bahram",
-        "بابک" to "Babak",
-        "کیان" to "Kian",
-        "کوروش" to "Kourosh",
-        "کورش" to "Kourosh",
-        "داریوش" to "Dariush",
-        "سروش" to "Soroush",
-        "بهزاد" to "Behzad",
-        "شهرام" to "Shahram",
-        "شهروز" to "Shahrooz",
-        "نیما" to "Nima",
-        "سینا" to "Sina",
-        "سهراب" to "Sohrab",
-        "رستم" to "Rostam",
-        "کاوه" to "Kaveh",
-        "کامیار" to "Kamyar",
-        "کیارش" to "Kiarash",
-        "کیومرث" to "Kiumars",
-        "کسری" to "Kasra",
-        "کسرا" to "Kasra",
-        "کریم" to "Karim",
-        "کرم" to "Karam",
-        "کاظم" to "Kazem",
-        "کمال" to "Kamal",
-        "کامبیز" to "Kambiz",
-        "کیوان" to "Keyvan",
-        "کیخسرو" to "Kaykhosrow",
-        "احسان" to "Ehsan",
-        "اشکان" to "Ashkan",
-        "پارسا" to "Parsa",
-        "بردیا" to "Bardia",
-        "ایلیا" to "Iliya",
-        "عباس" to "Abbas",
-        "جواد" to "Javad",
-        "صادق" to "Sadegh",
-        "باقر" to "Bagher",
-        "مرتضی" to "Morteza",
-        "مصطفی" to "Mostafa",
-        "مجتبی" to "Mojtaba",
-        "ابراهیم" to "Ebrahim",
-        "اسماعیل" to "Esmail",
-        "یعقوب" to "Yaghoub",
-        "یوسف" to "Yousef",
-        "یاسر" to "Yaser",
-        "حامد" to "Hamed",
-        "میلاد" to "Milad",
-        "اکبر" to "Akbar",
-        "اصغر" to "Asghar",
-        "قاسم" to "Ghasem",
-        "محسن" to "Mohsen",
-        "مسعود" to "Masoud",
-        "منصور" to "Mansour",
-        "محمود" to "Mahmoud",
-        "داوود" to "Davoud",
-        "داود" to "Davoud",
-        "بهمن" to "Bahman",
-        "بیژن" to "Bizhan",
-        "فرامرز" to "Faramarz",
-        "جهانگیر" to "Jahangir",
-        "پرویز" to "Parviz",
-        "جمشید" to "Jamshid",
-        "احمد" to "Ahmad",
-        "احمدی" to "Ahmadi",
-        "حسینی" to "Hosseini",
-        "رضایی" to "Rezaei",
-        "مرادی" to "Moradi",
-        "صادقی" to "Sadeghi",
-        "طباطبایی" to "Tabatabaei",
-        "کریمی" to "Karimi",
-        "بهرامی" to "Bahrami",
-        "کاظمی" to "Kazemi",
-        "باقری" to "Bagheri",
-        "دوستدار" to "Doostdar",
-        "حیدری" to "Heidari",
-        "کمالی" to "Kamali",
-        "شریفی" to "Sharifi",
-        "رستمی" to "Rostami",
-        "اکبری" to "Akbari",
-        "اسماعیلی" to "Esmaeili",
-        "فرهمند" to "Farahmand",
-        "کاویانی" to "Kavyani",
-        "کیانی" to "Kiani",
-        "کریمیان" to "Karimian",
-        "کوشکی" to "Koushki",
-        "کرمی" to "Karami",
-        "کرمپور" to "Karampour",
-        "کرم‌پور" to "Karampour",
-        "کاظمیان" to "Kazemian",
-        "کلانتری" to "Kalantari",
-        "کوچکی" to "Koochaki",
-        "کاشانی" to "Kashani",
-        "کوهی" to "Koohi",
-        "کوشا" to "Koosha",
-        "کیانیان" to "Kianian"
+        // Mohammad, Ali, Hossein variants
+        "محمد" to "Mohammad", "علی" to "Ali", "حسین" to "Hossein", "حسن" to "Hassan",
+        "رضا" to "Reza", "علیرضا" to "Alireza", "محمدرضا" to "Mohammadreza", "احمدرضا" to "Ahmadreza",
+        "غلامرضا" to "Gholamreza", "حمیدرضا" to "Hamidreza", "امیررضا" to "Amirreza", "امیر" to "Amir",
+        "امیرعلی" to "Amirali", "امیرحسین" to "Amirhossein", "امیرمحمد" to "Amirmohammad",
+        "امیرمهدی" to "Amirmehdi", "امیرعباس" to "Amirabbas", "مهدی" to "Mehdi",
+        "محمدمهدی" to "Mohammadmehdi", "محمدحسین" to "Mohammadhossein", "محمدعلی" to "Mohammadali",
+        "محمدجواد" to "Mohammadjavad", "محمدامین" to "Mohammadamin",
+
+        // Female given names
+        "فاطمه" to "Fatemeh", "زهرا" to "Zahra", "مریم" to "Maryam", "معصومه" to "Masoumeh",
+        "زینب" to "Zeinab", "نرگس" to "Narges", "سارا" to "Sara", "ندا" to "Neda",
+        "نازنین" to "Nazanin", "الهام" to "Elham", "بهاره" to "Bahareh", "رویا" to "Roya",
+        "آرزو" to "Arezoo", "سمیرا" to "Samira", "شیما" to "Shima", "نگار" to "Negar",
+        "پریسا" to "Parisa", "مینا" to "Mina", "سمیه" to "Somayeh", "مرضیه" to "Marzieh",
+        "صدیقه" to "Sedigheh", "طاهره" to "Tahereh", "خدیجه" to "Khadijeh", "سکینه" to "Sakineh",
+        "لیلا" to "Leila", "مژگان" to "Mozhgan", "فریبا" to "Fariba", "ناهید" to "Nahid",
+        "نیلوفر" to "Niloofar", "سپیده" to "Sepideh", "شیدا" to "Sheida", "مهسا" to "Mahsa",
+        "مهتاب" to "Mahtab", "شیرین" to "Shirin", "فرشته" to "Fereshteh", "روشنک" to "Rowshanak",
+        "پروانه" to "Parvaneh", "فاطیما" to "Fatima", "صبا" to "Saba", "سوگند" to "Sogand",
+        "آزاده" to "Azadeh", "اعظم" to "Azam", "اکرم" to "Akram", "اشرف" to "Ashraf",
+
+        // Names starting with 'ک' (Kaf) - critical requirement
+        "کاوه" to "Kaveh", "کامران" to "Kamran", "کامیار" to "Kamyar", "کامبیز" to "Kambiz",
+        "کیان" to "Kian", "کیارش" to "Kiarash", "کیومرث" to "Kiumars", "کسری" to "Kasra",
+        "کسرا" to "Kasra", "کریم" to "Karim", "کرم" to "Karam", "کاظم" to "Kazem",
+        "کمال" to "Kamal", "کوروش" to "Kourosh", "کورش" to "Kourosh", "کیوان" to "Keyvan",
+        "کیخسرو" to "Kaykhosrow", "کیانوش" to "Kianoosh", "کمیل" to "Komeil", "کوشا" to "Koosha",
+        "کوشان" to "Kooshan", "کیا" to "Kia", "کبری" to "Kobra", "کلثوم" to "Kolsoum",
+        "کاظمی" to "Kazemi", "کریمی" to "Karimi", "کمالی" to "Kamali", "کرمی" to "Karami",
+        "کاویانی" to "Kavyani", "کیانی" to "Kiani", "کریمیان" to "Karimian", "کوشکی" to "Koushki",
+        "کرمپور" to "Karampour", "کرم‌پو‌ر" to "Karampour", "کاظمیان" to "Kazemian",
+        "کلانتری" to "Kalantari", "کوچکی" to "Koochaki", "کاشانی" to "Kashani",
+        "کوهی" to "Koohi", "کیانیان" to "Kianian", "کیانفر" to "Kianfar", "کامرانی" to "Kamrani",
+        "کاکاوند" to "Kakavand", "کلهر" to "Kalhor", "کریمی‌پور" to "Karimipour",
+        "کلاهدوز" to "Kolahdooz", "کیانپور" to "Kianpour",
+
+        // Male given names
+        "سعید" to "Saeed", "حمید" to "Hamid", "مجید" to "Majid", "وحید" to "Vahid",
+        "امید" to "Omid", "نوید" to "Navid", "فرشید" to "Farshid", "فرزاد" to "Farzad",
+        "فرهاد" to "Farhad", "پیمان" to "Peyman", "پویا" to "Pouya", "پژمان" to "Pezhman",
+        "سامان" to "Saman", "آرش" to "Arash", "آرمان" to "Arman", "بهرام" to "Bahram",
+        "بابک" to "Babak", "داریوش" to "Dariush", "سروش" to "Soroush", "بهزاد" to "Behzad",
+        "شهرام" to "Shahram", "شهروز" to "Shahrooz", "نیما" to "Nima", "سینا" to "Sina",
+        "سهراب" to "Sohrab", "رستم" to "Rostam", "احسان" to "Ehsan", "اشکان" to "Ashkan",
+        "پارسا" to "Parsa", "بردیا" to "Bardia", "ایلیا" to "Iliya", "عباس" to "Abbas",
+        "جواد" to "Javad", "صادق" to "Sadegh", "باقر" to "Bagher", "مرتضی" to "Morteza",
+        "مصطفی" to "Mostafa", "مجتبی" to "Mojtaba", "ابراهیم" to "Ebrahim", "اسماعیل" to "Esmail",
+        "یعقوب" to "Yaghoub", "یوسف" to "Yousef", "یاسر" to "Yaser", "حامد" to "Hamed",
+        "میلاد" to "Milad", "اکبر" to "Akbar", "اصغر" to "Asghar", "قاسم" to "Ghasem",
+        "محسن" to "Mohsen", "مسعود" to "Masoud", "منصور" to "Mansour", "محمود" to "Mahmoud",
+        "داوود" to "Davoud", "داود" to "Davoud", "بهمن" to "Bahman", "بیژن" to "Bizhan",
+        "فرامرز" to "Faramarz", "جهانگیر" to "Jahangir", "پرویز" to "Parviz", "جمشید" to "Jamshid",
+        "احمد" to "Ahmad", "اسدالله" to "Asadollah", "حبیب" to "Habib", "رحمان" to "Rahman",
+        "رحیم" to "Rahim", "رشید" to "Rashid", "سلیمان" to "Soleiman", "شاهرخ" to "Shahrokh",
+        "صابر" to "Saber", "عارف" to "Aref", "عادل" to "Adel", "عرفان" to "Erfan",
+        "علی‌اکبر" to "Aliakbar", "علی‌اصغر" to "Aliasghar", "علیرضا" to "Alireza",
+        "غلام" to "Gholam", "غلامحسین" to "Gholamhossein", "فتح‌الله" to "Fathollah",
+        "قدرت" to "Ghodrat", "قربان" to "Ghorban", "لطف‌الله" to "Lotfollah", "مبین" to "Mobin",
+        "متین" to "Matin", "مهران" to "Mehran", "مهرداد" to "Mehrdad", "مهیار" to "Mahyar",
+        "نادر" to "Nader", "ناصر" to "Naser", "هادی" to "Hadi", "همایون" to "Homayoun",
+        "هومن" to "Hooman", "یاشار" to "Yashar", "یونس" to "Younes",
+
+        // Family names
+        "احمدی" to "Ahmadi", "حسینی" to "Hosseini", "رضایی" to "Rezaei", "مرادی" to "Moradi",
+        "صادقی" to "Sadeghi", "طباطبایی" to "Tabatabaei", "بهرامی" to "Bahrami",
+        "باقری" to "Bagheri", "دوستدار" to "Doostdar", "حیدری" to "Heidari", "شریفی" to "Sharifi",
+        "رستمی" to "Rostami", "اکبری" to "Akbari", "اسماعیلی" to "Esmaeili", "فرهمند" to "Farahmand",
+        "موسوی" to "Mousavi", "جعفری" to "Jafari", "نوری" to "Noori", "محمودی" to "Mahmoudi",
+        "عباسی" to "Abbasi", "طاهری" to "Taheri", "ابراهیمی" to "Ebrahimi", "نجفی" to "Najafi",
+        "میرزایی" to "Mirzaei", "رحیمی" to "Rahimi", "حبیبی" to "Habibi", "سلیمانی" to "Soleimani",
+        "یوسفی" to "Yousefi", "صالحی" to "Salehi", "قاسمی" to "Ghasemi", "مطهری" to "Motahari",
+        "فرهادی" to "Farhadi", "فتحی" to "Fathi", "مظاهری" to "Mazaheri", "نعمتی" to "Nemati",
+        "دهقان" to "Dehghan", "افشار" to "Afshar", "بختیاری" to "Bakhtiari", "جلالی" to "Jalali",
+        "جمالی" to "Jamali", "خلیلی" to "Khalili", "خانی" to "Khani", "دانش" to "Danesh",
+        "ذاکری" to "Zakeri", "روحانی" to "Rouhani", "زمانی" to "Zamani", "سبحانی" to "Sobhani",
+        "سلطانی" to "Soltani", "سجادی" to "Sajjadi", "شمس" to "Shams", "شجاعی" to "Shojaei",
+        "صادق‌پور" to "Sadeghpour", "ضرغامی" to "Zarghami", "عسگری" to "Asgari", "عابدینی" to "Abedini",
+        "علیپور" to "Alipour", "غفاری" to "Ghaffari", "فرجی" to "Faraji", "فاضلی" to "Fazeli",
+        "قنبری" to "Ghanbari", "کاوسی" to "Kavoosi", "مقصودی" to "Maghsoudi", "نامدار" to "Namdar",
+        "همتی" to "Hemmati", "وفایی" to "Vafaei", "یزدانی" to "Yazdani"
     )
 
     // Prefixes that should be capitalized
@@ -189,8 +124,7 @@ object PersianTransliterator {
         "مهر" to "Mehr",
         "فرد" to "Fard",
         "اصل" to "Asl",
-        "بگی" to "Beigi",
-        "کیا" to "Kia"
+        "بگی" to "Beigi"
     )
 
     // Suffixes for compound Iranian family names (e.g. رضازاده, احمدی‌پور, کریمی‌کیا)
@@ -221,21 +155,21 @@ object PersianTransliterator {
      * Normalizes Persian/Arabic characters:
      * - 'ک' (Persian Kaf \u06A9) and 'ك' (Arabic Kaf \u0643) -> Unified Persian 'ک'
      * - 'ی' (Persian Yeh \u06CC) and 'ي' (Arabic Yeh \u064A) -> Unified Persian 'ی'
-     * - Explicitly preserves short vowel diacritics:
-     *   - Fatha (َ / \u064E) -> maps to 'a' phoneme
-     *   - Kasra (ِ / \u0650) -> maps to 'e' phoneme
-     *   - Damma (ُ / \u064F) -> maps to 'o' phoneme
+     * - Preserves explicit short vowel diacritics if present:
+     *   - Fatha (َ / \u064E)
+     *   - Kasra (ِ / \u0650)
+     *   - Damma (ُ / \u064F)
      * - Strips tatweel/kashida, tanwin, shaddah, sukun, and normalizes ZWNJ to space
      */
     fun normalizeText(input: String): String {
         val sb = StringBuilder(input.length)
         for (c in input) {
             when (c) {
-                '\u0643', '\u06A9' -> sb.append('ک') // Arabic Kaf & Persian Kaf
+                '\u0643', '\u06A9' -> sb.append('ک') // Arabic Kaf & Persian Kaf -> ALWAYS 'ک'
                 '\u064A', '\u06CC', '\u0649' -> sb.append('ی') // Arabic Yeh & Persian Yeh
                 '\u0640' -> {} // Kashida/Tatweel (ignore)
-                '\u064E', '\u0650', '\u064F' -> sb.append(c) // PRESERVE FATHA (َ), KASRA (ِ), DAMMA (ُ)
-                '\u064B', '\u064C', '\u064D', '\u0651', '\u0652' -> {} // Other non-vowel tashkeel (tanwin, shadda, sukun)
+                '\u064E', '\u0650', '\u064F' -> sb.append(c) // Keep fatha, kasra, damma
+                '\u064B', '\u064C', '\u064D', '\u0651', '\u0652' -> {} // Strip other diacritics
                 '\u200C' -> sb.append(' ') // ZWNJ to space
                 else -> sb.append(c)
             }
@@ -285,9 +219,8 @@ object PersianTransliterator {
     }
 
     /**
-     * Transliterates a full Persian name into Latin script with Persian phoneme handling.
-     * E.g. "سید علیرضا احمدی پور" -> "Seyed Alireza Ahmadipour"
-     * "کاوه کریمی" -> "Kaveh Karimi" (Kaf 'ک' preserved accurately)
+     * Transliterates a full Persian name into Latin script with Persian phoneme handling
+     * and automatic Erab (vowel) recognition.
      */
     fun transliterate(persianName: String): String {
         val normalized = normalizeText(persianName)
@@ -324,7 +257,7 @@ object PersianTransliterator {
     private fun transliterateToken(token: String): String {
         val trimmed = token.trim()
 
-        // 1. Check exact dictionary match
+        // 1. Direct dictionary match
         commonGivenNames[trimmed]?.let { return it }
 
         // Also check stripped version if word has diacritics (e.g. كَرِیم -> کریم -> Karim)
@@ -350,7 +283,7 @@ object PersianTransliterator {
             }
         }
 
-        // 5. High-fidelity phoneme transliteration with Persian short vowel awareness
+        // 5. High-fidelity phoneme transliteration with automatic Erab (short vowel) inference
         return phoneticallyTransliterate(trimmed)
     }
 
@@ -359,17 +292,26 @@ object PersianTransliterator {
     }
 
     /**
+     * Checks if a character is a Persian long vowel or semivowel.
+     */
+    private fun isPersianVowelChar(c: Char): Boolean {
+        return c == 'ا' || c == 'آ' || c == 'و' || c == 'ی' || c == 'ي' || c == 'ى' ||
+               c == '\u064E' || c == '\u0650' || c == '\u064F'
+    }
+
+    /**
      * Persian phoneme transliteration:
-     * - 'ک' (kāf) is ALWAYS transliterated as 'k' (never ignored).
-     * - Recognizes short vowels:
-     *   - Fatha (َ / \u064E) -> "a"
-     *   - Kasra (ِ / \u0650) -> "e"
-     *   - Damma (ُ / \u064F) -> "o"
-     * - Recognizes Persian digraphs: 'خ' (kh), 'ش' (sh), 'چ' (ch), 'ژ' (zh), 'غ'/'ق' (gh).
+     * - 'ک' (kāf) is strictly transliterated as 'k' (never omitted).
+     * - If explicit Erab (َ، ِ، ُ) is present, it is mapped accurately to a, e, o.
+     * - If NO Erab is present (unvocalized standard Persian names), vowels are automatically
+     *   inferred phonotactically to prevent unnatural unpronounceable consonant clusters.
      */
     private fun phoneticallyTransliterate(word: String): String {
         val sb = StringBuilder()
         val len = word.length
+
+        // Check if word already contains explicit diacritic vowels
+        val hasExplicitDiacritics = word.any { it == '\u064E' || it == '\u0650' || it == '\u064F' }
 
         var i = 0
         while (i < len) {
@@ -377,57 +319,56 @@ object PersianTransliterator {
             val isStart = (i == 0)
             val isEnd = (i == len - 1)
 
-            // Lookahead for digraphs and phoneme patterns
             val nextC = if (i + 1 < len) word[i + 1] else null
+            val nextNextC = if (i + 2 < len) word[i + 2] else null
 
             // Special Persian phoneme: خوا (Khva -> Kha, e.g. خواجه Khajeh, خوانساری Khansari)
-            if (c == 'خ' && nextC == 'و' && i + 2 < len && word[i + 2] == 'ا') {
+            if (c == 'خ' && nextC == 'و' && nextNextC == 'ا') {
                 sb.append("kha")
                 i += 3
                 continue
             }
 
+            // Detect consonant mapping
+            var appendedConsonant: String? = null
+
             when (c) {
-                // Persian Short Vowels (Harakat / Erab):
-                // 1. Fatha (َ / \u064E) -> Persian short 'a'
+                // Explicit Persian Short Vowels (if typed):
                 '\u064E' -> sb.append("a")
-                // 2. Kasra (ِ / \u0650) -> Persian short 'e'
                 '\u0650' -> sb.append("e")
-                // 3. Damma (ُ / \u064F) -> Persian short 'o'
                 '\u064F' -> sb.append("o")
 
-                // Kaf: MUST NEVER be ignored! Supports both Persian 'ک' and Arabic 'ك'
-                'ک', '\u0643' -> sb.append("k")
-                'گ' -> sb.append("g")
+                // Kaf: NEVER IGNORED!
+                'ک', '\u0643' -> appendedConsonant = "k"
+                'گ' -> appendedConsonant = "g"
 
                 'آ' -> sb.append(if (isStart) "A" else "a")
                 'ا' -> {
-                    // Check if followed by short vowel diacritic
                     if (isStart) sb.append("A")
                     else sb.append("a")
                 }
-                'ب' -> sb.append("b")
-                'پ' -> sb.append("p")
-                'ت', 'ط' -> sb.append("t")
-                'ث', 'س', 'ص' -> sb.append("s")
-                'ج' -> sb.append("j")
-                'چ' -> sb.append("ch")
-                'ح' -> sb.append("h")
-                'خ' -> sb.append("kh")
-                'د' -> sb.append("d")
-                'ذ', 'ز', 'ض', 'ظ' -> sb.append("z")
-                'ر' -> sb.append("r")
-                'ژ' -> sb.append("zh")
-                'ش' -> sb.append("sh")
+                'ب' -> appendedConsonant = "b"
+                'پ' -> appendedConsonant = "p"
+                'ت', 'ط' -> appendedConsonant = "t"
+                'ث', 'س', 'ص' -> appendedConsonant = "s"
+                'ج' -> appendedConsonant = "j"
+                'چ' -> appendedConsonant = "ch"
+                'ح' -> appendedConsonant = "h"
+                'خ' -> appendedConsonant = "kh"
+                'د' -> appendedConsonant = "d"
+                'ذ', 'ز', 'ض', 'ظ' -> appendedConsonant = "z"
+                'ر' -> appendedConsonant = "r"
+                'ژ' -> appendedConsonant = "zh"
+                'ش' -> appendedConsonant = "sh"
                 'ع' -> {
                     if (isStart) sb.append("A")
                     else sb.append("a")
                 }
-                'غ', 'ق' -> sb.append("gh")
-                'ف' -> sb.append("f")
-                'ل' -> sb.append("l")
-                'م' -> sb.append("m")
-                'ن' -> sb.append("n")
+                'غ', 'ق' -> appendedConsonant = "gh"
+                'ف' -> appendedConsonant = "f"
+                'ل' -> appendedConsonant = "l"
+                'م' -> appendedConsonant = "m"
+                'ن' -> appendedConsonant = "n"
                 'و' -> {
                     if (isStart) sb.append("V")
                     else if (isEnd) sb.append("ou")
@@ -450,6 +391,27 @@ object PersianTransliterator {
                     }
                 }
             }
+
+            if (appendedConsonant != null) {
+                sb.append(appendedConsonant)
+
+                // AUTOMATIC ERAB / VOWEL INFERENCE:
+                // If the word has no explicit short vowel diacritics, and this consonant is
+                // followed by another consonant (e.g. ک followed by ر in کرم -> "k" + "a" + "r"),
+                // infer the natural Persian connective short vowel 'a' or 'e'.
+                if (!hasExplicitDiacritics && nextC != null && !isPersianVowelChar(nextC) && nextC != 'ه' && nextC != ' ') {
+                    // Check if two consonants are in initial or medial position
+                    // In Persian syllable structure, an initial consonant cluster #CC is illicit,
+                    // so an automatic short vowel (a / e) is required!
+                    if (isStart) {
+                        sb.append("a")
+                    } else if (nextNextC != null && !isPersianVowelChar(nextNextC)) {
+                        // In 3-consonant cluster (CCC), insert vowel to maintain CVC syllable
+                        sb.append("a")
+                    }
+                }
+            }
+
             i++
         }
 
