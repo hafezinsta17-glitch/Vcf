@@ -136,56 +136,40 @@ fun AudienceCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Persian Name -> Latin Name Conversion Display
+            // Persian Name Display
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color(0xFF070E1A), RoundedCornerShape(10.dp))
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Persian original
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Persian Name",
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = "Name",
+                        tint = Cyan400,
+                        modifier = Modifier.size(20.dp)
                     )
-                    Text(
-                        text = record.fullNamePersian.ifBlank { "نام نامشخص" },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                    contentDescription = "Transliterated to",
-                    tint = Cyan400,
-                    modifier = Modifier
-                        .padding(horizontal = 8.dp)
-                        .size(18.dp)
-                )
-
-                // Latin transliterated
-                Column(modifier = Modifier.weight(1.2f)) {
-                    Text(
-                        text = "Latin (vCard FN)",
-                        fontSize = 10.sp,
-                        color = Cyan400
-                    )
-                    Text(
-                        text = record.fullNameLatin,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Emerald400,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Column {
+                        Text(
+                            text = "نام و نام خانوادگی",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = record.fullNamePersian.ifBlank { "مخاطب ${record.nationalCode}" },
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
 

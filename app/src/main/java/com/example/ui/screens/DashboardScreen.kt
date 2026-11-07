@@ -233,7 +233,7 @@ fun DashboardScreen(
                                 color = Color.White
                             )
                             Text(
-                                text = "469 Code Filter & Latin Transliteration",
+                                text = "استخراج مخاطبین با کد ملی و ذخیره در VCF",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Cyan400
                             )

@@ -80,19 +80,15 @@ object CsvProcessor {
         val isPrefixMatched = cleanNat.startsWith(targetPrefix)
         val hasMobile = cleanMob.isNotBlank()
 
-        val latinName = if (rawName.isNotBlank()) {
-            PersianAiTransliterator.transliterate(rawName)
-        } else {
-            "Contact $cleanNat"
-        }
+        val persianCleanName = rawName.trim()
 
         val record = AudienceRecord(
             id = UUID.randomUUID().toString(),
             rowNumber = rowIndex,
             nationalCode = cleanNat.ifBlank { rawNat },
             cardNo = cleanCard.ifBlank { rawCard },
-            fullNamePersian = rawName,
-            fullNameLatin = latinName,
+            fullNamePersian = persianCleanName,
+            fullNameLatin = persianCleanName, // Preserves authentic Persian name directly
             birthDate = rawBirth,
             mobile = cleanMob.ifBlank { rawMob },
             matchedPrefix = targetPrefix,

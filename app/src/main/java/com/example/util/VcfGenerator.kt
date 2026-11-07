@@ -11,34 +11,37 @@ object VcfGenerator {
     /**
      * Streams an individual record directly to a Writer with no intermediate string concatenation.
      */
+    /**
+     * Streams an individual record directly to a Writer with original Persian name.
+     */
     fun appendRecordToWriter(writer: java.io.Writer, record: AudienceRecord) {
-        val names = record.fullNameLatin.trim().split(" ").filter { it.isNotEmpty() }
-        val firstName = if (names.isNotEmpty()) names.first() else ""
-        val lastName = if (names.size > 1) names.subList(1, names.size).joinToString(" ") else ""
+        val persianName = record.fullNamePersian.trim()
+        val displayName = persianName.ifBlank { "مخاطب ${record.nationalCode}" }
+
+        // Split Persian name into first name and family name if possible
+        val tokens = persianName.split(" ").filter { it.isNotEmpty() }
+        val firstName = if (tokens.isNotEmpty()) tokens.first() else displayName
+        val lastName = if (tokens.size > 1) tokens.subList(1, tokens.size).joinToString(" ") else ""
 
         writer.write("BEGIN:VCARD\r\n")
         writer.write("VERSION:3.0\r\n")
-        writer.write("FN:${escapeVcf(record.fullNameLatin)}\r\n")
-        writer.write("N:${escapeVcf(lastName)};${escapeVcf(firstName)};;;\r\n")
+        writer.write("FN;CHARSET=UTF-8:${escapeVcf(displayName)}\r\n")
+        writer.write("N;CHARSET=UTF-8:${escapeVcf(lastName)};${escapeVcf(firstName)};;;\r\n")
         if (record.mobile.isNotBlank()) {
             writer.write("TEL;TYPE=CELL,VOICE:${record.mobile}\r\n")
         }
         val noteContent = buildString {
-            append("National Code: ${record.nationalCode}")
-            if (record.cardNo.isNotBlank()) append(" | Card: ${record.cardNo}")
-            if (record.birthDate.isNotBlank()) append(" | Birth: ${record.birthDate}")
-            if (record.fullNamePersian.isNotBlank()) append(" | Persian Name: ${record.fullNamePersian}")
+            append("کد ملی: ${record.nationalCode}")
+            if (record.cardNo.isNotBlank()) append(" | کارت: ${record.cardNo}")
+            if (record.birthDate.isNotBlank()) append(" | تاریخ تولد: ${record.birthDate}")
         }
-        writer.write("NOTE:${escapeVcf(noteContent)}\r\n")
+        writer.write("NOTE;CHARSET=UTF-8:${escapeVcf(noteContent)}\r\n")
         writer.write("X-NATIONAL-CODE:${escapeVcf(record.nationalCode)}\r\n")
         if (record.cardNo.isNotBlank()) {
             writer.write("X-CARD-NO:${escapeVcf(record.cardNo)}\r\n")
         }
         if (record.birthDate.isNotBlank()) {
             writer.write("X-BIRTH-DATE:${escapeVcf(record.birthDate)}\r\n")
-        }
-        if (record.fullNamePersian.isNotBlank()) {
-            writer.write("X-PERSIAN-NAME:${escapeVcf(record.fullNamePersian)}\r\n")
         }
         writer.write("CATEGORIES:ParsVCF,Audience-${record.matchedPrefix}\r\n")
         writer.write("END:VCARD\r\n")

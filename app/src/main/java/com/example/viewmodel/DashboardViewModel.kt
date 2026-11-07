@@ -78,7 +78,6 @@ class DashboardViewModel : ViewModel() {
         } else {
             val q = query.trim().lowercase()
             list.filter {
-                it.fullNameLatin.lowercase().contains(q) ||
                 it.fullNamePersian.contains(q) ||
                 it.nationalCode.contains(q) ||
                 it.mobile.contains(q)
@@ -156,11 +155,22 @@ class DashboardViewModel : ViewModel() {
 
                 val fileSizeMb = String.format(java.util.Locale.US, "%.1f MB", tempCsvFile.length() / (1024.0 * 1024.0))
 
+                // Check if this same file was previously scanned and has a checkpoint
+                val prefs = context.getSharedPreferences("parsvcf_checkpoint", Context.MODE_PRIVATE)
+                val lastScannedFile = prefs.getString("last_file_name", null)
+                val lastProcessedRow = prefs.getLong("last_processed_row", 0L)
+                val savedCount = prefs.getLong("last_saved_count", 0L)
+
+                val resumeMsg = if (lastScannedFile == filename && lastProcessedRow > 0L) {
+                    "Resuming $filename from row ${formatCount(lastProcessedRow)} ($savedCount contacts previously saved)."
+                } else {
+                    "Loaded $filename ($fileSizeMb). Confirm prefix to start extraction."
+                }
+
                 withContext(Dispatchers.Main) {
-                    // Prompt user for 3-digit prefix before starting processing!
                     _isPrefixDialogOpen.value = true
                     _stats.value = _stats.value.copy(
-                        statusMessage = "Loaded $filename ($fileSizeMb). Confirm prefix to start extraction."
+                        statusMessage = resumeMsg
                     )
                 }
             } catch (t: Throwable) {
@@ -200,47 +210,63 @@ class DashboardViewModel : ViewModel() {
     private fun startDiskStreamingExtraction(context: Context, csvFile: File, prefix: String) {
         processingJob?.cancel()
 
-        // Prepare physical VCF output file
+        val filename = _currentFileName.value
+        val prefs = context.getSharedPreferences("parsvcf_checkpoint", Context.MODE_PRIVATE)
+        val isSameFile = prefs.getString("last_file_name", null) == filename &&
+                         prefs.getString("last_prefix", null) == prefix
+
+        val resumeRow = if (isSameFile) prefs.getLong("last_processed_row", 0L) else 0L
+        var matchedCount = if (isSameFile) prefs.getLong("last_saved_count", 0L) else 0L
+        var skippedNonPrefixCount = if (isSameFile) prefs.getLong("last_skipped_non_prefix", 0L) else 0L
+        var skippedNoMobileCount = if (isSameFile) prefs.getLong("last_skipped_no_mobile", 0L) else 0L
+
+        // Prepare physical persistent VCF output file
         val vcfDir = File(context.cacheDir, "vcf")
         vcfDir.mkdirs()
-        val outVcf = File(vcfDir, "contacts_${prefix}_${System.currentTimeMillis()}.vcf")
+        val outVcf = File(vcfDir, "contacts_${prefix}_persistent.vcf")
         generatedVcfFile = outVcf
         _vcfExportFile.value = outVcf
 
-        _audiences.value = emptyList()
-        _recentAudience.value = null
+        // If not resuming a previous session of the same file, reset the VCF file
+        if (!isSameFile || !outVcf.exists() || resumeRow == 0L) {
+            outVcf.delete()
+            matchedCount = 0L
+            skippedNonPrefixCount = 0L
+            skippedNoMobileCount = 0L
+            _audiences.value = emptyList()
+            _recentAudience.value = null
+        }
 
         _stats.value = DashboardStats(
             targetPrefix = prefix,
-            totalRowsProcessed = 0L,
-            totalTargetRows = 0L,
-            matchedPrefixAndMobile = 0L,
-            skippedNonPrefix = 0L,
-            skippedMissingMobile = 0L,
-            totalVcfSaved = 0L,
+            totalRowsProcessed = resumeRow,
+            totalTargetRows = resumeRow,
+            matchedPrefixAndMobile = matchedCount,
+            skippedNonPrefix = skippedNonPrefixCount,
+            skippedMissingMobile = skippedNoMobileCount,
+            totalVcfSaved = matchedCount,
             isProcessing = true,
             progressFraction = 0f,
-            statusMessage = "Streaming CSV & saving VCF in real-time..."
+            statusMessage = if (resumeRow > 0) "Resuming from row ${formatCount(resumeRow)}..." else "Streaming CSV & saving VCF in real-time..."
         )
 
         processingJob = viewModelScope.launch(Dispatchers.IO) {
-            val previewList = mutableListOf<AudienceRecord>()
-            var processedCount = 0L
-            var matchedCount = 0L
-            var skippedNonPrefixCount = 0L
-            var skippedNoMobileCount = 0L
+            val previewList = _audiences.value.toMutableList()
+            var processedCount = resumeRow
 
             val isTurbo = _speedMode.value == ProcessingSpeed.TURBO_FAST
             val delayDuration = _speedMode.value.delayMs
 
             var lastUiUpdate = System.currentTimeMillis()
+            var lastCheckpointSave = System.currentTimeMillis()
             var recentSaved: AudienceRecord? = null
 
             val totalBytes = csvFile.length().toFloat().coerceAtLeast(1f)
             var bytesReadSoFar = 0L
 
             try {
-                java.io.FileOutputStream(outVcf).use { fos ->
+                // Open VCF in append mode so existing contacts are not lost on resume!
+                java.io.FileOutputStream(outVcf, true).use { fos ->
                     java.io.BufferedWriter(java.io.OutputStreamWriter(fos, StandardCharsets.UTF_8), 65536).use { vcfWriter ->
 
                         java.io.FileInputStream(csvFile).use { fis ->
@@ -270,8 +296,8 @@ class DashboardViewModel : ViewModel() {
                                 CsvProcessor.ColumnMapping(0, 1, 2, 3, 4)
                             }
 
-                            // If first line wasn't header, process it as row 1
-                            if (!isHeader) {
+                            // If first line wasn't header and we are starting from row 0, process it
+                            if (!isHeader && resumeRow == 0L) {
                                 processedCount++
                                 val parseResult = CsvProcessor.parseRow(headerTokens, mapping, processedCount, prefix)
                                 if (!parseResult.isPrefixMatched) {
@@ -284,6 +310,16 @@ class DashboardViewModel : ViewModel() {
                                     VcfGenerator.appendRecordToWriter(vcfWriter, saved)
                                     previewList.add(saved)
                                     recentSaved = saved
+                                }
+                            }
+
+                            // If resuming from row N, skip the already processed rows efficiently
+                            var currentLineNumber = if (isHeader) 0L else 1L
+                            if (resumeRow > currentLineNumber) {
+                                while (currentLineNumber < resumeRow) {
+                                    val skippedLine = reader.readLine() ?: break
+                                    currentLineNumber++
+                                    bytesReadSoFar += skippedLine.toByteArray(StandardCharsets.UTF_8).size + 1
                                 }
                             }
 
@@ -307,7 +343,7 @@ class DashboardViewModel : ViewModel() {
                                         // Write directly into VCF file stream on disk
                                         VcfGenerator.appendRecordToWriter(vcfWriter, saved)
 
-                                        // Keep a sliding window of the latest 300 records in memory for UI dashboard
+                                        // Keep sliding window of latest 300 records for UI
                                         if (previewList.size >= 300) {
                                             previewList.removeAt(0)
                                         }
@@ -343,9 +379,23 @@ class DashboardViewModel : ViewModel() {
                                             totalVcfSaved = matchedCount,
                                             isProcessing = true,
                                             progressFraction = progressFraction,
-                                            statusMessage = "Processed ${formatCount(processedCount)} rows... (${formatCount(matchedCount)} '$prefix' saved to VCF)"
+                                            statusMessage = "Scanned ${formatCount(processedCount)} rows... (${formatCount(matchedCount)} '$prefix' in VCF)"
                                         )
                                     }
+                                }
+
+                                // Periodic checkpoint save every 3 seconds
+                                if (now - lastCheckpointSave > 3000) {
+                                    lastCheckpointSave = now
+                                    vcfWriter.flush()
+                                    prefs.edit()
+                                        .putString("last_file_name", filename)
+                                        .putString("last_prefix", prefix)
+                                        .putLong("last_processed_row", processedCount)
+                                        .putLong("last_saved_count", matchedCount)
+                                        .putLong("last_skipped_non_prefix", skippedNonPrefixCount)
+                                        .putLong("last_skipped_no_mobile", skippedNoMobileCount)
+                                        .apply()
                                 }
 
                                 if (!isTurbo && delayDuration > 0 && matchedCount < 100) {
@@ -358,7 +408,16 @@ class DashboardViewModel : ViewModel() {
                     }
                 }
 
-                // Completed!
+                // Completed scan: persist completion checkpoint
+                prefs.edit()
+                    .putString("last_file_name", filename)
+                    .putString("last_prefix", prefix)
+                    .putLong("last_processed_row", processedCount)
+                    .putLong("last_saved_count", matchedCount)
+                    .putLong("last_skipped_non_prefix", skippedNonPrefixCount)
+                    .putLong("last_skipped_no_mobile", skippedNoMobileCount)
+                    .apply()
+
                 val finalPreviewSnapshot = ArrayList(previewList)
                 withContext(Dispatchers.Main) {
                     _audiences.value = finalPreviewSnapshot
@@ -372,17 +431,17 @@ class DashboardViewModel : ViewModel() {
                         totalVcfSaved = matchedCount,
                         isProcessing = false,
                         progressFraction = 1f,
-                        statusMessage = "Complete! Extracted & saved ${formatCount(matchedCount)} audiences with prefix '$prefix' to VCF."
+                        statusMessage = "Complete! Extracted & saved ${formatCount(matchedCount)} Persian audiences ('$prefix') to VCF."
                     )
-                    _toastMessage.value = "Finished: ${formatCount(matchedCount)} audiences saved to VCF!"
+                    _toastMessage.value = "Finished: ${formatCount(matchedCount)} Persian contacts saved to VCF!"
                 }
             } catch (t: Throwable) {
                 withContext(Dispatchers.Main) {
                     _stats.value = _stats.value.copy(
                         isProcessing = false,
-                        statusMessage = "Streaming stopped: ${t.localizedMessage ?: "Error"}"
+                        statusMessage = "Streaming paused: ${t.localizedMessage ?: "Error"}"
                     )
-                    _toastMessage.value = "Processing stopped: ${t.localizedMessage}"
+                    _toastMessage.value = "Paused at row ${formatCount(processedCount)}"
                 }
             }
         }
